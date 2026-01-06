@@ -1,0 +1,24 @@
+[project]
+name = "sunobot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiogram>=3.24.0",
+    "aiomysql>=0.3.2",
+    "cryptography>=46.0.3",
+    "msgspec>=0.20.0",
+    "python-dotenv>=1.2.1",
+    "redis>=7.1.0",
+    "requests>=2.32.5",
+    "sqlalchemy>=2.0.45",
+    "suno-api>=0.1.2",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+fixable = ["F401", "I"]
