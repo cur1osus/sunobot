@@ -3,18 +3,28 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Message
 
+from bot.db.redis.user_db_model import UserRD
+from bot.handlers.cmds.start import START_TEXT
+from bot.keyboards.enums import MusicBackTarget
+from bot.keyboards.factories import (
+    MenuAction,
+    MusicBack,
+    MusicMode,
+    MusicStyle,
+    MusicTextAction,
+    MusicType,
+)
 from bot.keyboards.inline import (
     ik_back_home,
     ik_main,
     ik_music_modes,
     ik_music_styles,
+    ik_music_text_menu,
     ik_music_types,
 )
-from bot.settings import se
 from bot.states import BaseUserState, MusicGenerationState
 from bot.utils.messaging import edit_text_if_possible
 from bot.utils.suno_api import SunoAPIError, build_suno_client
@@ -25,168 +35,210 @@ if TYPE_CHECKING:
 
 router = Router()
 
+LYRICS_MENU_TEXT = (
+    "Начнем с создания текста для песни.\n\n"
+    "1. Вы можете сгенерировать текст песни по любому описанию "
+    "(кнопка Сгенерировать текст с AI)\n\n"
+    "2. Вы можете ввести текст вручную (кнопка Ввести текст вручную)"
+)
 
-def _client_or_none() -> SunoClient | None:
-    if not se.suno.api_key:
-        return None
+
+def _client() -> SunoClient:
     return build_suno_client()
 
 
-@router.callback_query(F.data == "menu:home")
-async def menu_home(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    await state.set_state(BaseUserState.main)
-    await _upsert_menu_message(
-        state,
-        text="Главное меню",
-        reply_markup=await ik_main(),
-        fallback=callback.message,
-    )
+@router.callback_query(MusicBack.filter())
+async def music_back(
+    query: CallbackQuery,
+    callback_data: MusicBack,
+    state: FSMContext,
+    user: UserRD | None,
+) -> None:
+    await query.answer()
+    target = MusicBackTarget(callback_data.target)
 
-
-@router.callback_query(F.data.startswith("music:back:"))
-async def music_back(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    target = callback.data.split(":", 2)[-1]  # type: ignore[union-attr]
-    data = await state.get_data()
-    custom_mode = bool(data.get("custom_mode"))
-    instrumental = bool(data.get("instrumental"))
-
-    if target == "home":
+    if target == MusicBackTarget.HOME:
         await state.set_state(BaseUserState.main)
-        await _upsert_menu_message(
-            state,
-            text="Главное меню",
+        text = START_TEXT.format(user=user) if user else "Главное меню"
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            text=text,
             reply_markup=await ik_main(),
-            fallback=callback.message,
         )
-    elif target == "mode":
+    elif target == MusicBackTarget.MODE:
         await state.set_state(MusicGenerationState.choose_mode)
-        await _upsert_menu_message(
-            state,
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
             text="Выбери режим генерации Suno:",
             reply_markup=await ik_music_modes(),
-            fallback=callback.message,
         )
-    elif target == "type":
+    elif target == MusicBackTarget.TYPE:
         await state.set_state(MusicGenerationState.choose_type)
-        await _upsert_menu_message(
-            state,
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
             text="Выбери тип трека:",
             reply_markup=await ik_music_types(),
-            fallback=callback.message,
         )
-    elif target == "style":
+    elif target == MusicBackTarget.STYLE:
         await state.set_state(MusicGenerationState.style)
-        await _upsert_menu_message(
-            state,
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
             text="Выбери стиль или введи свой сообщением:",
             reply_markup=await ik_music_styles(),
-            fallback=callback.message,
         )
-    elif target == "title":
-        await _ask_for_title(state, callback.message)
-    elif target == "prompt":
+    elif target == MusicBackTarget.TITLE:
+        await _ask_for_title(state, query.message)
+    elif target == MusicBackTarget.PROMPT:
         await state.set_state(MusicGenerationState.prompt)
-        back_to = "title" if custom_mode else "type"
-        await _upsert_menu_message(
-            state,
-            text="Опиши трек (промпт):",
-            reply_markup=await ik_back_home(back_to=back_to),
-            fallback=callback.message,
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            text="Опиши текст песни для генерации:",
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.HOME),
         )
 
 
-@router.callback_query(F.data == "menu:music")
-@router.message(Command("music"))
-async def music_entry(event: Message | CallbackQuery, state: FSMContext) -> None:
-    message = event if isinstance(event, Message) else event.message
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-
-    data_before = await state.get_data()
-    menu_msg_id = data_before.get("menu_msg_id")
-    menu_chat_id = data_before.get("menu_chat_id")
-
+@router.callback_query(MenuAction.filter(F.action == "music"))
+async def music_entry(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
     await state.clear()
-    if menu_msg_id and menu_chat_id:
-        await state.update_data(menu_msg_id=menu_msg_id, menu_chat_id=menu_chat_id)
-
-    client = _client_or_none()
-    if not client:
-        await _upsert_menu_message(
-            state,
-            text="SUNO_API_KEY не задан. Установите переменную окружения и перезапустите бота.",
-            reply_markup=await ik_back_home(with_cancel=False),
-            fallback=message,
-        )
-        return
-
-    await state.set_state(MusicGenerationState.choose_mode)
-    await _upsert_menu_message(
-        state,
-        text="Выбери режим генерации Suno:",
-        reply_markup=await ik_music_modes(),
-        fallback=message,
+    await edit_text_if_possible(
+        query.message.bot,
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id,
+        text=LYRICS_MENU_TEXT,
+        reply_markup=await ik_music_text_menu(),
     )
 
 
-@router.callback_query(F.data.startswith("music:mode:"))
-async def music_mode_handler(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    if (await state.get_state()) != MusicGenerationState.choose_mode:
-        return
-
-    custom_mode = callback.data.endswith("custom")  # type: ignore[union-attr]
-    await state.update_data(custom_mode=custom_mode)
-    await state.set_state(MusicGenerationState.choose_type)
-    await _upsert_menu_message(
-        state,
-        text="Выбери тип трека:",
-        reply_markup=await ik_music_types(),
-        fallback=callback.message,
+@router.callback_query(MusicTextAction.filter(F.action == "ai"))
+async def lyrics_ai(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
+    await state.set_state(MusicGenerationState.prompt)
+    await state.update_data(prompt_source="ai")
+    await edit_text_if_possible(
+        query.message.bot,
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id,
+        text="Опиши, какой текст песни нужно сгенерировать:",
+        reply_markup=await ik_back_home(back_to=MusicBackTarget.HOME),
     )
 
 
-@router.callback_query(F.data.startswith("music:type:"))
-async def music_type_handler(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    if (await state.get_state()) not in (
-        MusicGenerationState.choose_type,
-        MusicGenerationState.choose_mode,
-    ):
-        return
-
-    custom_mode = bool((await state.get_data()).get("custom_mode"))
-    instrumental = callback.data.endswith("instrumental")  # type: ignore[union-attr]
-    await state.update_data(instrumental=instrumental, prompt=None)
-    if custom_mode:
-        await state.set_state(MusicGenerationState.style)
-        await _upsert_menu_message(
-            state,
-            text="Выбери стиль или введи свой сообщением:",
-            reply_markup=await ik_music_styles(),
-            fallback=callback.message,
-        )
-    else:
-        await state.set_state(MusicGenerationState.prompt)
-        await _upsert_menu_message(
-            state,
-            text="Опиши трек (промпт):",
-            reply_markup=await ik_back_home(back_to="type"),
-            fallback=callback.message,
-        )
+@router.callback_query(MusicTextAction.filter(F.action == "manual"))
+async def lyrics_manual(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
+    await state.set_state(MusicGenerationState.prompt)
+    await state.update_data(prompt_source="manual")
+    await edit_text_if_possible(
+        query.message.bot,
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id,
+        text="Введи текст песни вручную:",
+        reply_markup=await ik_back_home(back_to=MusicBackTarget.HOME),
+    )
 
 
 @router.message(MusicGenerationState.prompt)
 async def prompt_received(message: Message, state: FSMContext) -> None:
     prompt = (message.text or "").strip()
     if not prompt:
-        await message.answer("Промпт не должен быть пустым.")
+        await message.answer("Текст не должен быть пустым.")
         return
 
-    await state.update_data(prompt=prompt)
-    await start_generation(message, state)
+    data = await state.get_data()
+    if data.get("prompt_source") == "ai":
+        await message.answer("Генерирую текст песни...")
+        try:
+            lyrics = await _client().generate_lyrics(prompt=prompt)
+        except SunoAPIError as err:
+            await message.answer(f"Не удалось сгенерировать текст: {err}")
+            return
+
+        await state.update_data(prompt=lyrics)
+        preview = f"Текст песни:\n\n{lyrics}"
+        await message.answer(preview[:4000])
+    else:
+        await state.update_data(prompt=prompt)
+    await state.set_state(MusicGenerationState.choose_mode)
+    await message.answer(
+        text="Выбери режим генерации Suno:",
+        reply_markup=await ik_music_modes(),
+    )
+
+
+@router.callback_query(MusicMode.filter())
+async def music_mode_handler(
+    query: CallbackQuery,
+    callback_data: MusicMode,
+    state: FSMContext,
+) -> None:
+    await query.answer()
+    if (await state.get_state()) != MusicGenerationState.choose_mode:
+        return
+
+    custom_mode = callback_data.mode == "custom"
+    await state.update_data(custom_mode=custom_mode)
+    await state.set_state(MusicGenerationState.choose_type)
+    await edit_text_if_possible(
+        query.message.bot,
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id,
+        text="Выбери тип трека:",
+        reply_markup=await ik_music_types(),
+    )
+
+
+@router.callback_query(MusicType.filter())
+async def music_type_handler(
+    query: CallbackQuery,
+    callback_data: MusicType,
+    state: FSMContext,
+) -> None:
+    await query.answer()
+    if (await state.get_state()) not in (
+        MusicGenerationState.choose_type,
+        MusicGenerationState.choose_mode,
+    ):
+        return
+
+    data = await state.get_data()
+    custom_mode = bool(data.get("custom_mode"))
+    instrumental = callback_data.track_type == "instrumental"
+    await state.update_data(instrumental=instrumental)
+
+    if custom_mode:
+        await state.set_state(MusicGenerationState.style)
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            text="Выбери стиль или введи свой сообщением:",
+            reply_markup=await ik_music_styles(),
+        )
+        return
+
+    if not data.get("prompt"):
+        await state.set_state(MusicGenerationState.prompt)
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            text="Опиши текст песни для генерации:",
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.HOME),
+        )
+        return
+
+    await start_generation(query.message, state)
 
 
 @router.message(MusicGenerationState.style)
@@ -200,33 +252,39 @@ async def style_received(message: Message, state: FSMContext) -> None:
     await _ask_for_title(state, message)
 
 
-@router.callback_query(F.data.startswith("music:style:"))
-async def style_selected(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
+@router.callback_query(MusicStyle.filter())
+async def style_selected(
+    query: CallbackQuery,
+    callback_data: MusicStyle,
+    state: FSMContext,
+) -> None:
+    await query.answer()
     if (await state.get_state()) != MusicGenerationState.style:
         return
 
-    style_key = callback.data.split(":", 2)[-1]  # type: ignore[union-attr]
+    style_key = callback_data.style
     if style_key == "custom":
-        await _upsert_menu_message(
-            state,
+        await edit_text_if_possible(
+            query.message.bot,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
             text="Введи стиль сообщением (например, Jazz, Pop, Rock).",
-            reply_markup=await ik_back_home(back_to="type"),
-            fallback=callback.message,
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.TYPE),
         )
         return
 
     await state.update_data(style=style_key)
-    await _ask_for_title(state, callback.message)
+    await _ask_for_title(state, query.message)
 
 
 async def _ask_for_title(state: FSMContext, message: Message) -> None:
     await state.set_state(MusicGenerationState.title)
-    await _upsert_menu_message(
-        state,
+    await edit_text_if_possible(
+        message.bot,
+        chat_id=message.chat.id,
+        message_id=message.message_id,
         text="Добавь название трека:",
-        reply_markup=await ik_back_home(back_to="style"),
-        fallback=message,
+        reply_markup=await ik_back_home(back_to=MusicBackTarget.STYLE),
     )
 
 
@@ -238,27 +296,11 @@ async def title_received(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(title=title)
-    await state.set_state(MusicGenerationState.prompt)
-    await _upsert_menu_message(
-        state,
-        text="Опиши трек (промпт):",
-        reply_markup=await ik_back_home(back_to="title"),
-        fallback=message,
-    )
+    await start_generation(message, state)
 
 
 async def start_generation(message: Message, state: FSMContext) -> None:
-    client = _client_or_none()
-    if not client:
-        await _upsert_menu_message(
-            state,
-            text="SUNO_API_KEY не задан. Установите переменную окружения и перезапустите бота.",
-            reply_markup=await ik_main(),
-            fallback=message,
-        )
-        await state.clear()
-        return
-
+    client = _client()
     data = await state.get_data()
     custom_mode = bool(data.get("custom_mode"))
     instrumental = bool(data.get("instrumental"))
@@ -266,13 +308,12 @@ async def start_generation(message: Message, state: FSMContext) -> None:
     style = data.get("style", "") if custom_mode else ""
     title = data.get("title", "") if custom_mode else ""
 
+    if not prompt:
+        await message.answer("Текст песни не задан.")
+        return
+
     await state.set_state(MusicGenerationState.waiting)
-    await _upsert_menu_message(
-        state,
-        text="Запускаю генерацию музыки в Suno...",
-        reply_markup=None,
-        fallback=message,
-    )
+    await message.answer("Запускаю генерацию музыки в Suno...")
 
     try:
         task_id = await client.generate_music(
@@ -283,53 +324,28 @@ async def start_generation(message: Message, state: FSMContext) -> None:
             title=title,
         )
     except SunoAPIError as err:
-        await _upsert_menu_message(
-            state,
-            text=f"Не удалось отправить запрос: {err}",
-            reply_markup=await ik_main(),
-            fallback=message,
-        )
+        await message.answer(f"Не удалось отправить запрос: {err}")
         await state.clear()
         return
 
-    await _upsert_menu_message(
-        state,
-        text=f"Задача {task_id} создана. Ожидаю результат...",
-        reply_markup=None,
-        fallback=message,
-    )
+    await message.answer(f"Задача {task_id} создана. Ожидаю результат...")
 
     try:
         status, details = await client.poll_task(task_id)
     except SunoAPIError as err:
-        await _upsert_menu_message(
-            state,
-            text=f"Ошибка при получении статуса: {err}",
-            reply_markup=await ik_main(),
-            fallback=message,
-        )
+        await message.answer(f"Ошибка при получении статуса: {err}")
         await state.clear()
         return
 
     if status != "SUCCESS":
-        await _upsert_menu_message(
-            state,
-            text=f"Задача завершилась со статусом: {status}",
-            reply_markup=await ik_main(),
-            fallback=message,
-        )
+        await message.answer(f"Задача завершилась со статусом: {status}")
         await state.clear()
         return
 
     response = details.get("response", {}) if isinstance(details, dict) else {}
     tracks = response.get("sunoData") or []
     if not tracks:
-        await _upsert_menu_message(
-            state,
-            text="Готово, но ссылки на аудио не получены.",
-            reply_markup=await ik_main(),
-            fallback=message,
-        )
+        await message.answer("Готово, но ссылки на аудио не получены.")
         await state.clear()
         return
 
@@ -359,52 +375,8 @@ async def start_generation(message: Message, state: FSMContext) -> None:
         else:
             await message.answer(caption or f"{title} (без ссылки на аудио)")
 
-    await _upsert_menu_message(
-        state,
-        text="Готово! Открой меню, чтобы запустить новую задачу.",
+    await message.answer(
+        "Готово! Открой меню, чтобы запустить новую задачу.",
         reply_markup=await ik_main(),
-        fallback=message,
     )
     await state.clear()
-
-
-async def _upsert_menu_message(
-    state: FSMContext,
-    *,
-    text: str,
-    reply_markup: InlineKeyboardMarkup | None,
-    fallback: Message,
-) -> None:
-    data = await state.get_data()
-    chat_id = data.get("menu_chat_id") or fallback.chat.id
-    message_id = data.get("menu_msg_id")
-    bot = fallback.bot
-
-    if message_id and await edit_text_if_possible(
-        bot,
-        chat_id=chat_id,
-        message_id=message_id,
-        text=text,
-        reply_markup=reply_markup,
-    ):
-        return
-
-    if await edit_text_if_possible(
-        bot,
-        chat_id=fallback.chat.id,
-        message_id=fallback.message_id,
-        text=text,
-        reply_markup=reply_markup,
-    ):
-        await state.update_data(
-            menu_msg_id=fallback.message_id,
-            menu_chat_id=fallback.chat.id,
-        )
-        return
-
-    sent = await bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        reply_markup=reply_markup,
-    )
-    await state.update_data(menu_msg_id=sent.message_id, menu_chat_id=chat_id)

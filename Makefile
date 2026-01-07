@@ -20,4 +20,5 @@ format:
 
 .PHONY: dev
 dev:
+	python3.12 -m compileall bot
 	./run.sh .env.dev

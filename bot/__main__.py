@@ -83,12 +83,15 @@ async def set_default_commands(bot: Bot) -> None:
     await bot.set_my_commands(
         [
             BotCommand(command="start", description="start"),
-            BotCommand(command="music", description="generate music with Suno"),
+            BotCommand(command="credits", description="show remaining credits"),
         ]
     )
 
 
 async def main() -> None:
+    if not se.suno.api_key:
+        raise RuntimeError("SUNO_API_KEY не задан. Бот не может быть запущен.")
+
     api = PRODUCTION
 
     bot = Bot(

@@ -3,13 +3,56 @@ from typing import Final
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.keyboards.enums import MusicBackTarget
+from bot.keyboards.factories import (
+    MenuAction,
+    MusicBack,
+    MusicMode,
+    MusicStyle,
+    MusicTextAction,
+    MusicType,
+)
+
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "🔙"
 
 
 async def ik_main() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="🎵 Сгенерировать музыку", callback_data="menu:music")
+    builder.button(
+        text="🎼 Создать новую песню",
+        callback_data=MenuAction(action="music").pack(),
+    )
+    builder.button(
+        text="❓ Как это работает?",
+        callback_data=MenuAction(action="how").pack(),
+    )
+    builder.button(
+        text="💳 Пополнить баланс",
+        callback_data=MenuAction(action="topup").pack(),
+    )
+    builder.button(
+        text="🪙 Заработать",
+        callback_data=MenuAction(action="earn").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_music_text_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🤖 Сгенерировать текст с AI",
+        callback_data=MusicTextAction(action="ai").pack(),
+    )
+    builder.button(
+        text="✍️ Ввести текст вручную",
+        callback_data=MusicTextAction(action="manual").pack(),
+    )
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="home").pack(),
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -18,13 +61,13 @@ async def ik_music_modes() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="Быстрый (промпт)",
-        callback_data="music:mode:quick",
+        callback_data=MusicMode(mode="quick").pack(),
     )
     builder.button(
         text="Кастом (стиль+название)",
-        callback_data="music:mode:custom",
+        callback_data=MusicMode(mode="custom").pack(),
     )
-    _append_nav(builder, back_to="home")
+    _append_nav(builder, back_to=MusicBackTarget.HOME)
     builder.adjust(2)
     return builder.as_markup()
 
@@ -33,50 +76,76 @@ async def ik_music_types() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="С вокалом",
-        callback_data="music:type:vocal",
+        callback_data=MusicType(track_type="vocal").pack(),
     )
     builder.button(
         text="Инструментал",
-        callback_data="music:type:instrumental",
+        callback_data=MusicType(track_type="instrumental").pack(),
     )
-    _append_nav(builder, back_to="mode")
+    _append_nav(builder, back_to=MusicBackTarget.MODE)
     builder.adjust(2)
-    return builder.as_markup()
-
-
-async def ik_back_home(
-    back_to: str | None = "home", with_cancel: bool = True
-) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    _append_nav(builder, back_to=back_to, include_cancel=with_cancel)
-    builder.adjust(2 if back_to and with_cancel else 1)
     return builder.as_markup()
 
 
 async def ik_music_styles() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="🎤 Pop", callback_data="music:style:Pop")
-    builder.button(text="🎸 Rock", callback_data="music:style:Rock")
-    builder.button(text="🎷 Jazz", callback_data="music:style:Jazz")
-    builder.button(text="🎻 Classical", callback_data="music:style:Classical")
-    builder.button(text="🎧 Electronic", callback_data="music:style:Electronic")
-    builder.button(text="🎹 Lo-fi", callback_data="music:style:Lo-fi")
-    builder.button(text="🎼 Ambient", callback_data="music:style:Ambient")
-    builder.button(text="🎙 Hip-Hop", callback_data="music:style:Hip-Hop")
-    builder.button(text="✏️ Свой стиль", callback_data="music:style:custom")
-    _append_nav(builder, back_to="type", include_cancel=True)
+    builder.button(
+        text="🎤 Pop",
+        callback_data=MusicStyle(style="Pop").pack(),
+    )
+    builder.button(
+        text="🎸 Rock",
+        callback_data=MusicStyle(style="Rock").pack(),
+    )
+    builder.button(
+        text="🎷 Jazz",
+        callback_data=MusicStyle(style="Jazz").pack(),
+    )
+    builder.button(
+        text="🎻 Classical",
+        callback_data=MusicStyle(style="Classical").pack(),
+    )
+    builder.button(
+        text="🎧 Electronic",
+        callback_data=MusicStyle(style="Electronic").pack(),
+    )
+    builder.button(
+        text="🎹 Lo-fi",
+        callback_data=MusicStyle(style="Lo-fi").pack(),
+    )
+    builder.button(
+        text="🎼 Ambient",
+        callback_data=MusicStyle(style="Ambient").pack(),
+    )
+    builder.button(
+        text="🎙 Hip-Hop",
+        callback_data=MusicStyle(style="Hip-Hop").pack(),
+    )
+    builder.button(
+        text="✏️ Свой стиль",
+        callback_data=MusicStyle(style="custom").pack(),
+    )
+    _append_nav(builder, back_to=MusicBackTarget.TYPE)
     builder.adjust(2, 2, 2, 2, 1, 2)
+    return builder.as_markup()
+
+
+async def ik_back_home(
+    back_to: MusicBackTarget | None = MusicBackTarget.HOME,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    _append_nav(builder, back_to=back_to)
+    builder.adjust(1)
     return builder.as_markup()
 
 
 def _append_nav(
     builder: InlineKeyboardBuilder,
     *,
-    back_to: str | None,
-    include_cancel: bool = True,
+    back_to: MusicBackTarget | None,
 ) -> None:
     if back_to:
         builder.button(
             text="⬅️ Назад",
-            callback_data=f"music:back:{back_to}",
+            callback_data=MusicBack(target=back_to.value).pack(),
         )

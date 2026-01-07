@@ -98,10 +98,59 @@ class SunoClient:
             raise SunoAPIError("Не удалось получить taskId из ответа Suno API.")
         return task_id
 
+    async def generate_lyrics(
+        self,
+        *,
+        prompt: str,
+    ) -> str:
+        payload: dict[str, Any] = {
+            "prompt": prompt,
+            "callBackUrl": self.callback_url,
+        }
+
+        data = await self._request(
+            "POST",
+            "/api/v1/lyrics",
+            json=payload,
+        )
+
+        task_id = data.get("data", {}).get("taskId")
+        if not task_id:
+            raise SunoAPIError("Не удалось получить taskId из ответа Suno API.")
+
+        status, details = await self.poll_lyrics(task_id)
+        if status != "SUCCESS":
+            raise SunoAPIError(f"Генерация текста завершилась со статусом: {status}")
+
+        response = details.get("response", {}) or {}
+        items = response.get("data") or []
+        for item in items:
+            if isinstance(item, dict) and item.get("text"):
+                return str(item["text"])
+
+        raise SunoAPIError("Не удалось получить текст песни из ответа Suno API.")
+
     async def get_task_details(self, task_id: str) -> dict[str, Any]:
         return await self._request(
             "GET",
             "/api/v1/generate/record-info",
+            params={"taskId": task_id},
+        )
+
+    async def get_remaining_credits(self) -> int:
+        data = await self._request(
+            "GET",
+            "/api/v1/generate/credit",
+        )
+        credits = data.get("data")
+        if credits is None:
+            raise SunoAPIError("Не удалось получить баланс кредитов из Suno API.")
+        return int(credits)
+
+    async def get_lyrics_details(self, task_id: str) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/api/v1/lyrics/record-info",
             params={"taskId": task_id},
         )
 
@@ -118,6 +167,29 @@ class SunoClient:
         details: dict[str, Any] = {}
         while asyncio.get_event_loop().time() < deadline:
             details = await self.get_task_details(task_id)
+            data = details.get("data", {}) or {}
+            status = str(data.get("status") or "").upper()
+
+            if status in terminal_statuses:
+                return status, data
+
+            await asyncio.sleep(self.poll_interval)
+
+        return "TIMEOUT", details.get("data", {}) if details else {}
+
+    async def poll_lyrics(self, task_id: str) -> tuple[str, dict[str, Any]]:
+        deadline = asyncio.get_event_loop().time() + self.poll_timeout
+        terminal_statuses = {
+            "SUCCESS",
+            "CREATE_TASK_FAILED",
+            "GENERATE_LYRICS_FAILED",
+            "CALLBACK_EXCEPTION",
+            "SENSITIVE_WORD_ERROR",
+        }
+
+        details: dict[str, Any] = {}
+        while asyncio.get_event_loop().time() < deadline:
+            details = await self.get_lyrics_details(task_id)
             data = details.get("data", {}) or {}
             status = str(data.get("status") or "").upper()
 
