@@ -20,6 +20,7 @@ class UserRD(msgspec.Struct, AlchemyStruct["UserRD"], kw_only=True, array_like=T
     name: str
     username: str | None = msgspec.field(default=None)
     credits: int
+    role: str
 
     referrer_id: int | None = msgspec.field(default=None)
     balance: int = 0
