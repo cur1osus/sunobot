@@ -46,6 +46,7 @@ async def start_cmd_with_deep_link(
         text=START_TEXT.format(user=user),
         reply_markup=await ik_main(),
     )
+    await message.answer("Ты воспользовался реферальной ссылкой!")
 
 
 @router.message(CommandStart(deep_link=False))
@@ -85,10 +86,9 @@ async def _apply_referral(
         return
 
     user_db.referrer_id = referrer_id
-    referrer_db.referrals_count += 1
     await session.commit()
 
-    await UserRD.delete(user_db.user_id)
+    await UserRD.delete(redis, user_db.user_id)
 
 
 def _parse_inviter_id(payload: str) -> int | None:
