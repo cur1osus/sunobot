@@ -13,10 +13,6 @@ class MusicMode(CallbackData, prefix="music_mode"):
     mode: str
 
 
-class MusicType(CallbackData, prefix="music_type"):
-    track_type: str
-
-
 class MusicStyle(CallbackData, prefix="music_style"):
     style: str
 

@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.sql.operators import eq, ne
 
 from .models import UserModel
-from .redis.user_db_model import UserRD
+from .redis.user_model import UserRD
 
 if TYPE_CHECKING:
     from redis.asyncio.client import Redis

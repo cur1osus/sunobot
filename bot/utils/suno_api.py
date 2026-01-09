@@ -20,8 +20,8 @@ class SunoClient:
         base_url: str = "https://api.sunoapi.org",
         callback_url: str,
         default_model: str = "V5",
-        poll_interval: float = 5,
-        poll_timeout: int = 120,
+        poll_interval: float = 10,
+        poll_timeout: int = 300,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")

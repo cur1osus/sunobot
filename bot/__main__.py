@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from asyncio import CancelledError
+from datetime import datetime
 from functools import partial
+from zoneinfo import ZoneInfo
 
 import msgspec
 from aiogram import Bot, Dispatcher
@@ -29,11 +31,36 @@ from bot.settings import Settings, se
 
 load_dotenv()
 
-scheduler_logger.setLevel(logging.ERROR)
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
-logging.basicConfig(level=logging.INFO)
+
+def _moscow_converter(timestamp: float) -> tuple:
+    return datetime.fromtimestamp(timestamp, MOSCOW_TZ).timetuple()
+
+
+class MoscowFormatter(logging.Formatter):
+    converter = staticmethod(_moscow_converter)
+
+
+def setup_logging() -> None:
+    formatter = MoscowFormatter(
+        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+    else:
+        for handler in root_logger.handlers:
+            handler.setFormatter(formatter)
+
+
+scheduler_logger.setLevel(logging.ERROR)
+setup_logging()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 async def start_scheduler(

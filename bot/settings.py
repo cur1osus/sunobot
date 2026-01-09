@@ -35,6 +35,20 @@ class SunoSettings:
         self.poll_timeout = int(os.environ.get("SUNO_POLL_TIMEOUT", 120))
 
 
+class AgentPlatformSettings:
+    def __init__(self) -> None:
+        self.api_key = os.environ.get("AGENT_PLATFORM_API_KEY", "")
+        self.base_url = os.environ.get(
+            "AGENT_PLATFORM_BASE_URL",
+            "https://litellm.tokengate.ru/v1",
+        )
+        self.model = os.environ.get(
+            "AGENT_PLATFORM_MODEL",
+            "cloudru/openai/gpt-oss-120b",
+        )
+        self.timeout = int(os.environ.get("AGENT_PLATFORM_TIMEOUT", 60))
+
+
 class Settings:
     bot_token = os.environ.get("BOT_TOKEN", "")
     sep = os.environ.get("SEP", "\n")
@@ -42,6 +56,7 @@ class Settings:
     db: DBSettings = DBSettings()
     redis: RedisSettings = RedisSettings()
     suno: SunoSettings = SunoSettings()
+    agent_platform: AgentPlatformSettings = AgentPlatformSettings()
 
     def mysql_dsn(self) -> URL:
         return URL.create(
