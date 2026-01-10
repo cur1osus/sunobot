@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import aiohttp
@@ -43,37 +44,40 @@ class SunoClient:
             "Content-Type": "application/json",
         }
         url = f"{self.base_url}{path}"
-        async with aiohttp.ClientSession() as session:
-            async with session.request(
-                method=method,
-                url=url,
-                headers=headers,
-                json=json,
-                params=params,
-                timeout=self.poll_timeout,
-            ) as response:
-                try:
-                    payload: dict[str, Any] = await response.json()
-                except (aiohttp.ContentTypeError, json.JSONDecodeError) as err:
-                    text = await response.text()
-                    raise SunoAPIError(
-                        "Suno API вернул ответ не в JSON формате: "
-                        f"status={response.status}, body={text[:200]}"
-                    ) from err
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    json=json,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=self.poll_timeout),
+                ) as response:
+                    try:
+                        payload: dict[str, Any] = await response.json()
+                    except (aiohttp.ContentTypeError, json.JSONDecodeError) as err:
+                        text = await response.text()
+                        raise SunoAPIError(
+                            "Suno API вернул ответ не в JSON формате: "
+                            f"status={response.status}, body={text[:200]}"
+                        ) from err
 
-                if response.status >= 400:
-                    raise SunoAPIError(
-                        payload.get("msg")
-                        or f"Suno API error {response.status}: {payload}"
-                    )
+                    if response.status >= 400:
+                        raise SunoAPIError(
+                            payload.get("msg")
+                            or f"Suno API error {response.status}: {payload}"
+                        )
 
-                code = payload.get("code", 200)
-                if code != 200:
-                    raise SunoAPIError(
-                        payload.get("msg", f"Suno API returned code {code}")
-                    )
+                    code = payload.get("code", 200)
+                    if code != 200:
+                        raise SunoAPIError(
+                            payload.get("msg", f"Suno API returned code {code}")
+                        )
 
-                return payload
+                    return payload
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise SunoAPIError(f"Ошибка запроса к Suno API: {err}") from err
 
     async def generate_music(
         self,
