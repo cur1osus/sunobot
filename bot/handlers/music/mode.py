@@ -4,7 +4,7 @@ from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.enums import MusicBackTarget
@@ -30,6 +30,7 @@ async def music_mode_handler(
     state: FSMContext,
     user: UserRD,
     session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
     await query.answer()
@@ -66,6 +67,7 @@ async def music_mode_handler(
                 state,
                 user=user,
                 session=session,
+                sessionmaker=sessionmaker,
                 redis=redis,
             )
             return

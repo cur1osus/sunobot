@@ -6,7 +6,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.db.func import charge_user_credits, refund_user_credits
 from bot.db.redis.user_model import UserRD
@@ -70,6 +70,7 @@ async def prompt_received(
     state: FSMContext,
     user: UserRD,
     session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
     prompt = (message.text or "").strip()
@@ -122,6 +123,7 @@ async def prompt_received(
             state,
             user=user,
             session=session,
+            sessionmaker=sessionmaker,
             redis=redis,
         )
         return

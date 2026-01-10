@@ -4,7 +4,7 @@ from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.enums import MusicBackTarget
@@ -23,6 +23,7 @@ async def title_received(
     state: FSMContext,
     user: UserRD,
     session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
     title = (message.text or "").strip()
@@ -49,5 +50,6 @@ async def title_received(
         state,
         user=user,
         session=session,
+        sessionmaker=sessionmaker,
         redis=redis,
     )

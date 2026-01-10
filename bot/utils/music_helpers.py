@@ -18,7 +18,7 @@ from bot.utils.texts import MUSIC_TITLE_TEXT
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from bot.db.redis.user_model import UserRD
     from bot.utils.agent_platform import AgentPlatformClient
@@ -60,6 +60,7 @@ async def start_generation(
     *,
     user: UserRD,
     session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
     client = _client()
@@ -82,11 +83,12 @@ async def start_generation(
             "Текст превышает 500 символов, обрезал для быстрого режима."
         )
 
+    credits_cost = 2
     if not await charge_user_credits(
         session=session,
         redis=redis,
         user=user,
-        amount=2,
+        amount=credits_cost,
     ):
         await message.answer(
             "Недостаточно кредитов для генерации музыки. Нужно 2 кредита."
@@ -111,7 +113,7 @@ async def start_generation(
             session=session,
             redis=redis,
             user=user,
-            amount=2,
+            amount=credits_cost,
         )
         await message.answer("Не удалось запустить генерацию музыки. Попробуйте позже.")
         await state.clear()
@@ -128,6 +130,10 @@ async def start_generation(
         filename_base=base_name,
         poll_interval=client.poll_interval,
         poll_timeout=client.poll_timeout,
+        user_id=user.user_id,
+        sessionmaker=sessionmaker,
+        redis=redis,
+        credits_cost=credits_cost,
     )
 
     await message.answer(
