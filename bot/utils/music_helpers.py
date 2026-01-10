@@ -7,14 +7,20 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot.background_tasks import schedule_music_task
+from bot.db.func import charge_user_credits, refund_user_credits
 from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.inline import ik_back_home, ik_main
 from bot.states import MusicGenerationState
 from bot.utils.agent_platform import build_agent_platform_client
-from bot.utils.messaging import edit_text_if_possible
+from bot.utils.music_state import get_music_data, update_music_data
 from bot.utils.suno_api import SunoAPIError, build_suno_client
+from bot.utils.texts import MUSIC_TITLE_TEXT
 
 if TYPE_CHECKING:
+    from redis.asyncio import Redis
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from bot.db.redis.user_model import UserRD
     from bot.utils.agent_platform import AgentPlatformClient
     from bot.utils.suno_api import SunoClient
 
@@ -22,14 +28,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_QUICK_PROMPT_LEN = 500
-
-LYRICS_MENU_TEXT = (
-    "Начнем с создания текста для песни.\n\n"
-    "1. Вы можете сгенерировать текст песни по любому описанию "
-    "(кнопка Сгенерировать текст с AI)\n\n"
-    "2. Вы можете ввести текст вручную (кнопка Ввести текст вручную)\n\n"
-    "Если нужен инструментал, выбери «Инструментал» — попросим промпт-описание."
-)
 
 
 def _client() -> SunoClient:
@@ -50,24 +48,28 @@ def _first_line(text: str) -> str:
 
 async def ask_for_title(state: FSMContext, message: Message) -> None:
     await state.set_state(MusicGenerationState.title)
-    await edit_text_if_possible(
-        message.bot,
-        chat_id=message.chat.id,
-        message_id=message.message_id,
-        text="Добавь название трека:",
+    await message.answer(
+        MUSIC_TITLE_TEXT,
         reply_markup=await ik_back_home(back_to=MusicBackTarget.STYLE),
     )
 
 
-async def start_generation(message: Message, state: FSMContext) -> None:
+async def start_generation(
+    message: Message,
+    state: FSMContext,
+    *,
+    user: UserRD,
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
     client = _client()
-    data = await state.get_data()
-    custom_mode = bool(data.get("custom_mode"))
-    instrumental = bool(data.get("instrumental"))
-    prompt = data.get("prompt", "")
+    data = await get_music_data(state)
+    custom_mode = data.custom_mode
+    instrumental = data.instrumental
+    prompt = data.prompt
     generation_prompt = prompt
-    style = data.get("style", "") if custom_mode else ""
-    title = data.get("title", "") if custom_mode else ""
+    style = data.style if custom_mode else ""
+    title = data.title if custom_mode else ""
 
     if not generation_prompt:
         await message.answer("Промпт не задан.")
@@ -75,10 +77,22 @@ async def start_generation(message: Message, state: FSMContext) -> None:
 
     if not custom_mode and prompt and len(prompt) > MAX_QUICK_PROMPT_LEN:
         generation_prompt = prompt[:MAX_QUICK_PROMPT_LEN].rstrip()
-        await state.update_data(prompt=generation_prompt)
+        await update_music_data(state, prompt=generation_prompt)
         await message.answer(
             "Текст превышает 500 символов, обрезал для быстрого режима."
         )
+
+    if not await charge_user_credits(
+        session=session,
+        redis=redis,
+        user=user,
+        amount=2,
+    ):
+        await message.answer(
+            "Недостаточно кредитов для генерации музыки. Нужно 2 кредита."
+        )
+        await state.clear()
+        return
 
     await state.set_state(MusicGenerationState.waiting)
     await message.answer("Запускаю генерацию музыки в Suno...")
@@ -92,7 +106,13 @@ async def start_generation(message: Message, state: FSMContext) -> None:
             title=title,
         )
     except SunoAPIError as err:
-        logger.warning("Failed to start music generation: %s", err)
+        logger.warning("Не удалось запустить генерацию музыки: %s", err)
+        await refund_user_credits(
+            session=session,
+            redis=redis,
+            user=user,
+            amount=2,
+        )
         await message.answer("Не удалось запустить генерацию музыки. Попробуйте позже.")
         await state.clear()
         return

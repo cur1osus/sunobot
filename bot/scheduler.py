@@ -57,18 +57,18 @@ class Scheduler:
 
     def clear(self, tag: None | Hashable = None) -> None:
         if tag is None:
-            logger.info("Deleting *all* jobs")
+            logger.info("Удаляю все задачи")
             del self.jobs[:]
         else:
-            logger.info('Deleting all jobs tagged "%s"', tag)
+            logger.info('Удаляю все задачи с тегом "%s"', tag)
             self.jobs[:] = (job for job in self.jobs if tag not in job.tags)
 
     def cancel_job(self, job: "Job") -> None:
         try:
-            logger.info('Cancelling job "%s"', str(job))
+            logger.info('Отменяю задачу "%s"', str(job))
             self.jobs.remove(job)
         except ValueError:
-            logger.info('Cancelling not-scheduled job "%s"', str(job))
+            logger.info('Отменяю несформированную задачу "%s"', str(job))
 
     def every(self, interval: int = 1) -> "Job":
         return Job(interval, self)
@@ -390,9 +390,9 @@ class Job:
 
     async def run(self):
         if self._is_overdue(datetime.datetime.now()):
-            logger.info("Cancelling job %s", self)
+            logger.info("Отменяю задачу %s", self)
             return CancelJob
-        logger.info("Running job %s", self)
+        logger.info("Запускаю задачу %s", self)
         ret = await self.job_func()
         if isinstance(ret, CancelJob) or ret is CancelJob:
             self.scheduler.cancel_job(self)
@@ -400,7 +400,7 @@ class Job:
         self.last_run = datetime.datetime.now()
         self._schedule_next_run()
         if self._is_overdue(self.next_run):
-            logger.info("Cancelling job %s", self)
+            logger.info("Отменяю задачу %s", self)
             return CancelJob
         return ret
 

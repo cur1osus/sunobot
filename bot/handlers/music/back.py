@@ -5,7 +5,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from bot.db.redis.user_model import UserRD
-from bot.handlers.cmds.start import START_TEXT
 from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.factories import MusicBack
 from bot.keyboards.inline import (
@@ -16,8 +15,15 @@ from bot.keyboards.inline import (
     ik_music_text_menu,
 )
 from bot.states import BaseUserState, MusicGenerationState
-from bot.utils.messaging import edit_text_if_possible
-from bot.utils.music_helpers import LYRICS_MENU_TEXT, ask_for_title
+from bot.utils.messaging import edit_or_answer
+from bot.utils.texts import (
+    LYRICS_MENU_TEXT,
+    MUSIC_MODES_TEXT,
+    MUSIC_PROMPT_TEXT,
+    MUSIC_STYLE_TEXT,
+    MUSIC_TITLE_TEXT,
+    main_menu_text,
+)
 
 router = Router()
 
@@ -27,56 +33,50 @@ async def music_back(
     query: CallbackQuery,
     callback_data: MusicBack,
     state: FSMContext,
-    user: UserRD | None,
+    user: UserRD,
 ) -> None:
     await query.answer()
     target = MusicBackTarget(callback_data.target)
 
     if target == MusicBackTarget.HOME:
         await state.set_state(BaseUserState.main)
-        text = START_TEXT.format(user=user) if user else "Главное меню"
-        await edit_text_if_possible(
-            query.message.bot,
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
-            text=text,
+        await edit_or_answer(
+            query,
+            text=main_menu_text(user),
             reply_markup=await ik_main(),
         )
     elif target == MusicBackTarget.TEXT_MENU:
         await state.clear()
-        await edit_text_if_possible(
-            query.message.bot,
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
+        await edit_or_answer(
+            query,
             text=LYRICS_MENU_TEXT,
             reply_markup=await ik_music_text_menu(),
         )
     elif target == MusicBackTarget.MODE:
         await state.set_state(MusicGenerationState.choose_mode)
-        await edit_text_if_possible(
-            query.message.bot,
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
-            text="Выбери режим генерации Suno:",
+        await edit_or_answer(
+            query,
+            text=MUSIC_MODES_TEXT,
             reply_markup=await ik_music_modes(),
         )
     elif target == MusicBackTarget.STYLE:
         await state.set_state(MusicGenerationState.style)
-        await edit_text_if_possible(
-            query.message.bot,
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
-            text="Выбери стиль или введи свой сообщением:",
+        await edit_or_answer(
+            query,
+            text=MUSIC_STYLE_TEXT,
             reply_markup=await ik_music_styles(),
         )
     elif target == MusicBackTarget.TITLE:
-        await ask_for_title(state, query.message)
+        await state.set_state(MusicGenerationState.title)
+        await edit_or_answer(
+            query,
+            text=MUSIC_TITLE_TEXT,
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.STYLE),
+        )
     elif target == MusicBackTarget.PROMPT:
         await state.set_state(MusicGenerationState.prompt)
-        await edit_text_if_possible(
-            query.message.bot,
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
-            text="Опиши промпт для генерации:",
+        await edit_or_answer(
+            query,
+            text=MUSIC_PROMPT_TEXT,
             reply_markup=await ik_back_home(back_to=MusicBackTarget.TEXT_MENU),
         )

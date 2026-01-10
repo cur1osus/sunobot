@@ -11,3 +11,8 @@ class MusicGenerationState(StatesGroup):
     style = State()
     title = State()
     waiting = State()
+
+
+class WithdrawState(StatesGroup):
+    amount = State()
+    details = State()

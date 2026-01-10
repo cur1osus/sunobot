@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from aiogram.types import User
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.sql.operators import eq, ne
 
 from .models import UserModel
@@ -58,7 +58,7 @@ async def _get_user_model(
     redis: Redis,
     user: User,
 ) -> UserRD:
-    user_model: UserRD | None = await UserRD.get(redis, user.id)
+    user_model = await UserRD.get(redis, user.id)
 
     if user_model:
         return user_model
@@ -74,3 +74,138 @@ async def _get_user_model(
     await cast(UserRD, user_model).save(redis)
 
     return cast(UserRD, user_model)
+
+
+async def charge_user_credits(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    user: UserRD,
+    amount: int,
+) -> bool:
+    if amount <= 0:
+        return True
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, user.user_id), UserModel.credits >= amount)
+        .values(credits=UserModel.credits - amount)
+    )
+    result = await session.execute(stmt)
+    if result.rowcount == 0:
+        await session.rollback()
+        return False
+
+    await session.commit()
+    await user.delete(redis, user.user_id)
+    return True
+
+
+async def refund_user_credits(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    user: UserRD,
+    amount: int,
+) -> None:
+    if amount <= 0:
+        return
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, user.user_id))
+        .values(credits=UserModel.credits + amount)
+    )
+    await session.execute(stmt)
+    await session.commit()
+    await user.delete(redis, user.user_id)
+
+
+async def add_user_credits(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    user: UserRD,
+    amount: int,
+) -> None:
+    if amount <= 0:
+        return
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, user.user_id))
+        .values(credits=UserModel.credits + amount)
+    )
+    await session.execute(stmt)
+    await session.commit()
+    await user.delete(redis, user.user_id)
+
+
+async def deduct_user_credits(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    user_id: int,
+    amount: int,
+) -> None:
+    if amount <= 0:
+        return
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, user_id))
+        .values(credits=func.greatest(UserModel.credits - amount, 0))
+    )
+    await session.execute(stmt)
+    await session.commit()
+    await UserRD.delete(redis, user_id)
+
+
+async def add_referral_balance(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    referrer_id: int,
+    amount: int,
+) -> bool:
+    if amount <= 0:
+        return False
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, referrer_id))
+        .values(balance=UserModel.balance + amount)
+    )
+    result = await session.execute(stmt)
+    if result.rowcount == 0:
+        await session.rollback()
+        return False
+
+    await session.commit()
+    await UserRD.delete(redis, referrer_id)
+    return True
+
+
+async def withdraw_user_balance(
+    *,
+    session: AsyncSession,
+    redis: Redis,
+    user: UserRD,
+    amount: int,
+) -> bool:
+    if amount <= 0:
+        return False
+
+    stmt = (
+        update(UserModel)
+        .where(eq(UserModel.user_id, user.user_id), UserModel.balance >= amount)
+        .values(balance=UserModel.balance - amount)
+    )
+    result = await session.execute(stmt)
+    if result.rowcount == 0:
+        await session.rollback()
+        return False
+
+    await session.commit()
+    await user.delete(redis, user.user_id)
+    return True

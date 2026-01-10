@@ -52,7 +52,14 @@ class SunoClient:
                 params=params,
                 timeout=self.poll_timeout,
             ) as response:
-                payload: dict[str, Any] = await response.json()
+                try:
+                    payload: dict[str, Any] = await response.json()
+                except (aiohttp.ContentTypeError, json.JSONDecodeError) as err:
+                    text = await response.text()
+                    raise SunoAPIError(
+                        "Suno API вернул ответ не в JSON формате: "
+                        f"status={response.status}, body={text[:200]}"
+                    ) from err
 
                 if response.status >= 400:
                     raise SunoAPIError(

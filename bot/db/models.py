@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, func
+from sqlalchemy import BigInteger, ForeignKey, String, func
 from sqlalchemy.dialects.mysql import TIMESTAMP
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from bot.db.enum import UserRole
+from bot.db.enum import TransactionStatus, TransactionType, UserRole
 
 from .base import Base
 
@@ -20,7 +20,6 @@ class UserModel(Base):
 
     referrer_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     balance: Mapped[int] = mapped_column(default=0, nullable=False)
-    # TODO: another table for calculate referral_paid, payout_amount
 
     registration_datetime: Mapped[datetime] = mapped_column(
         TIMESTAMP,
@@ -31,3 +30,40 @@ class UserModel(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+    transactions: Mapped[list["TransactionModel"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class TransactionModel(Base):
+    __tablename__ = "transactions"
+
+    user_idpk: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    manager_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, index=True
+    )
+    type: Mapped[str] = mapped_column(
+        String(50),
+        default=TransactionType.TOPUP.value,
+    )
+    method: Mapped[str] = mapped_column(String(50))
+    plan: Mapped[str] = mapped_column(String(20))
+    amount: Mapped[int] = mapped_column()
+    currency: Mapped[str] = mapped_column(String(10))
+    credits: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default=TransactionStatus.SUCCESS.value,
+    )
+    payload: Mapped[str] = mapped_column(String(200))
+    telegram_charge_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    provider_charge_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    details: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+    )
+
+    user: Mapped[UserModel] = relationship(back_populates="transactions")

@@ -6,8 +6,8 @@ from aiogram.types import CallbackQuery
 
 from bot.keyboards.factories import MenuAction
 from bot.keyboards.inline import ik_music_text_menu
-from bot.utils.messaging import edit_text_if_possible
-from bot.utils.music_helpers import LYRICS_MENU_TEXT
+from bot.utils.messaging import edit_or_answer
+from bot.utils.texts import LYRICS_MENU_TEXT
 
 router = Router()
 
@@ -16,10 +16,8 @@ router = Router()
 async def music_entry(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
     await state.clear()
-    await edit_text_if_possible(
-        query.message.bot,
-        chat_id=query.message.chat.id,
-        message_id=query.message.message_id,
+    await edit_or_answer(
+        query,
         text=LYRICS_MENU_TEXT,
         reply_markup=await ik_music_text_menu(),
     )

@@ -5,16 +5,24 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import aiohttp
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
+from sqlalchemy import select
 
+from bot.db.func import refund_user_credits
+from bot.db.models import UserModel
+from bot.db.redis.user_model import UserRD
 from bot.keyboards.inline import ik_main
 from bot.scheduler import CancelJob, default_scheduler
 from bot.utils.suno_api import SunoAPIError, build_suno_client
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +60,10 @@ def schedule_music_task(
     filename_base: str,
     poll_interval: float,
     poll_timeout: int,
+    user_id: int,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    credits_cost: int,
 ) -> None:
     interval_seconds = max(1, int(round(poll_interval)))
     effective_timeout = max(poll_timeout, MIN_POLL_TIMEOUT)
@@ -64,6 +76,10 @@ def schedule_music_task(
         filename_base=filename_base,
         context=context,
         poll_timeout=effective_timeout,
+        user_id=user_id,
+        sessionmaker=sessionmaker,
+        redis=redis,
+        credits_cost=credits_cost,
     )
 
 
@@ -75,19 +91,29 @@ async def _poll_music_task(
     filename_base: str,
     context: MusicTaskContext,
     poll_timeout: int,
+    user_id: int,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    credits_cost: int,
 ) -> CancelJob | None:
     if time.monotonic() - context.started_at > poll_timeout:
         if context.timeout_extensions < MAX_TIMEOUT_EXTENSIONS:
             context.timeout_extensions += 1
             context.started_at = time.monotonic()
             logger.warning(
-                "Polling timed out for task %s, extending wait (%s/%s)",
+                "Ожидание по задаче %s истекло, продлеваю (%s/%s)",
                 task_id,
                 context.timeout_extensions,
                 MAX_TIMEOUT_EXTENSIONS,
             )
             return None
-        logger.warning("Polling timed out for task %s", task_id)
+        logger.warning("Ожидание по задаче %s истекло", task_id)
+        await _refund_credits(
+            sessionmaker=sessionmaker,
+            redis=redis,
+            user_id=user_id,
+            amount=credits_cost,
+        )
         await bot.send_message(chat_id, "Генерация превысила лимит ожидания.")
         return CancelJob
 
@@ -96,8 +122,14 @@ async def _poll_music_task(
         details = await client.get_task_details(task_id)
     except SunoAPIError as err:
         context.errors += 1
-        logger.warning("Failed to poll task %s: %s", task_id, err)
+        logger.warning("Не удалось опросить задачу %s: %s", task_id, err)
         if context.errors >= MAX_POLL_ERRORS:
+            await _refund_credits(
+                sessionmaker=sessionmaker,
+                redis=redis,
+                user_id=user_id,
+                amount=credits_cost,
+            )
             await bot.send_message(
                 chat_id,
                 "Не удалось получить результат генерации. Попробуйте позже.",
@@ -113,7 +145,13 @@ async def _poll_music_task(
         return CancelJob
 
     if status in TERMINAL_STATUSES:
-        logger.warning("Task %s завершилась со статусом %s", task_id, status)
+        logger.warning("Задача %s завершилась со статусом %s", task_id, status)
+        await _refund_credits(
+            sessionmaker=sessionmaker,
+            redis=redis,
+            user_id=user_id,
+            amount=credits_cost,
+        )
         await bot.send_message(
             chat_id,
             STATUS_MESSAGES.get(status, "Генерация завершилась с ошибкой."),
@@ -132,7 +170,7 @@ async def _send_tracks(
     response = data.get("response", {}) if isinstance(data, dict) else {}
     tracks = response.get("sunoData") or []
     if not tracks:
-        logger.warning("No tracks returned for filename base %s", filename_base)
+        logger.warning("Не получены треки для базового имени %s", filename_base)
         await bot.send_message(chat_id, "Готово, но ссылки на аудио не получены.")
         return
 
@@ -146,7 +184,7 @@ async def _send_tracks(
         try:
             audio_bytes = await _download_audio(audio_url)
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            logger.warning("Failed to download audio for %s: %s", audio_url, err)
+            logger.warning("Не удалось скачать аудио %s: %s", audio_url, err)
             await bot.send_message(
                 chat_id,
                 f"Не удалось скачать аудио для трека {idx}.",
@@ -161,7 +199,7 @@ async def _send_tracks(
             )
             sent_any = True
         except Exception as err:
-            logger.warning("Failed to send audio file %s: %s", filename, err)
+            logger.warning("Не удалось отправить аудиофайл %s: %s", filename, err)
             await bot.send_message(
                 chat_id,
                 f"Не удалось отправить файл для трека {idx}.",
@@ -174,7 +212,7 @@ async def _send_tracks(
             reply_markup=await ik_main(),
         )
     else:
-        logger.warning("No audio files were sent for filename base %s", filename_base)
+        logger.warning("Не удалось отправить аудиофайлы для %s", filename_base)
         await bot.send_message(chat_id, "Не удалось отправить ни одного файла.")
 
 
@@ -200,3 +238,28 @@ def _sanitize_filename(name: str) -> str:
     if len(cleaned) > FILENAME_LIMIT:
         cleaned = cleaned[:FILENAME_LIMIT].rstrip()
     return cleaned
+
+
+async def _refund_credits(
+    *,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    user_id: int,
+    amount: int,
+) -> None:
+    if amount <= 0:
+        return
+    async with sessionmaker() as session:
+        user_db = await session.scalar(
+            select(UserModel).where(UserModel.user_id == user_id)
+        )
+        if not user_db:
+            logger.warning("Возврат пропущен, пользователь %s не найден", user_id)
+            return
+        user_rd = UserRD.from_orm(user_db)
+        await refund_user_credits(
+            session=session,
+            redis=redis,
+            user=user_rd,
+            amount=amount,
+        )

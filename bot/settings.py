@@ -7,6 +7,15 @@ from sqlalchemy import URL
 load_dotenv()
 
 
+def _parse_int_list(raw: str) -> list[int]:
+    ids: list[int] = []
+    for part in raw.split(","):
+        value = part.strip()
+        if value.isdigit():
+            ids.append(int(value))
+    return ids
+
+
 class RedisSettings:
     def __init__(self) -> None:
         self.host = os.environ.get("REDIS_HOST", "localhost")
@@ -49,6 +58,20 @@ class AgentPlatformSettings:
         self.timeout = int(os.environ.get("AGENT_PLATFORM_TIMEOUT", 60))
 
 
+class WithdrawSettings:
+    def __init__(self) -> None:
+        raw_ids = os.environ.get("WITHDRAW_MANAGER_IDS", "")
+        self.manager_ids = _parse_int_list(raw_ids)
+
+
+class PaymentsSettings:
+    def __init__(self) -> None:
+        self.yookassa_provider_token = os.environ.get(
+            "YOOKASSA_PROVIDER_TOKEN",
+            "",
+        )
+
+
 class Settings:
     bot_token = os.environ.get("BOT_TOKEN", "")
     sep = os.environ.get("SEP", "\n")
@@ -57,6 +80,8 @@ class Settings:
     redis: RedisSettings = RedisSettings()
     suno: SunoSettings = SunoSettings()
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
+    withdraw: WithdrawSettings = WithdrawSettings()
+    payments: PaymentsSettings = PaymentsSettings()
 
     def mysql_dsn(self) -> URL:
         return URL.create(

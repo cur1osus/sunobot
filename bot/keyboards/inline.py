@@ -10,7 +10,11 @@ from bot.keyboards.factories import (
     MusicMode,
     MusicStyle,
     MusicTextAction,
+    TopupMethod,
+    TopupPlan,
+    WithdrawAction,
 )
+from bot.utils.texts import get_topup_method, get_topup_tariffs
 
 LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "⬅️ Назад"
@@ -33,6 +37,43 @@ async def ik_main() -> InlineKeyboardMarkup:
     builder.button(
         text="🪙 Заработать",
         callback_data=MenuAction(action="earn").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_topup_methods() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="⭐️ Звезды",
+        callback_data=TopupMethod(method="stars").pack(),
+    )
+    builder.button(
+        text="💳 Банковская карта",
+        callback_data=TopupMethod(method="card").pack(),
+    )
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_topup_plans(method: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    method_info = get_topup_method(method)
+    tariffs = get_topup_tariffs(method)
+    button_prefix = method_info.button_prefix if method_info else "💳"
+    currency_label = method_info.currency_label if method_info else "руб"
+    for tariff in tariffs:
+        builder.button(
+            text=f"{button_prefix} {tariff.price} {currency_label} ({tariff.credits} кредитов)",
+            callback_data=TopupPlan(method=method, plan=tariff.plan).pack(),
+        )
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="topup").pack(),
     )
     builder.adjust(1)
     return builder.as_markup()
@@ -140,6 +181,38 @@ async def ik_earn_menu(share_url: str) -> InlineKeyboardMarkup:
     builder.button(
         text=BACK_BUTTON_TEXT,
         callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_back_earn() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="earn").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_back_withdraw() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="withdraw").pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_withdraw_manager(transaction_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Завершено",
+        callback_data=WithdrawAction(
+            action="done", transaction_id=transaction_id
+        ).pack(),
     )
     builder.adjust(1)
     return builder.as_markup()

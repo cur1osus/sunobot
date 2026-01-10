@@ -9,12 +9,10 @@ from aiogram.utils.deep_linking import create_start_link
 if TYPE_CHECKING:
     from aiogram.types import Message
 
-    from bot.db.models import UserModel
-
 
 router = Router()
 
 
 @router.message(Command(commands=["ad"]))
-async def add_new_bot(message: Message, user: UserModel) -> None:
+async def add_new_bot(message: Message) -> None:
     await message.answer(await create_start_link(bot=message.bot, payload="start"))  # pyright: ignore

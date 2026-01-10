@@ -98,12 +98,12 @@ async def startup(dispatcher: Dispatcher, bot: Bot, se: Settings, redis: Redis) 
         )
     )
 
-    logger.info("Bot started")
+    logger.info("Бот запущен")
 
 
 async def shutdown(dispatcher: Dispatcher) -> None:
     await dispatcher["db_session_closer"]()
-    logger.info("Bot stopped")
+    logger.info("Бот остановлен")
 
 
 async def set_default_commands(bot: Bot) -> None:
@@ -154,7 +154,7 @@ if __name__ == "__main__":
 
     except ModuleNotFoundError:
         loop_factory = asyncio.new_event_loop
-        logger.info("uvloop not found, using default event loop")
+        logger.info("uvloop не найден, используется стандартный цикл событий")
 
     try:
         with asyncio.Runner(loop_factory=loop_factory) as runner:

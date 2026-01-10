@@ -19,3 +19,17 @@ class MusicStyle(CallbackData, prefix="music_style"):
 
 class MusicTextAction(CallbackData, prefix="music_text"):
     action: str
+
+
+class TopupMethod(CallbackData, prefix="topup_method"):
+    method: str
+
+
+class TopupPlan(CallbackData, prefix="topup_plan"):
+    method: str
+    plan: str
+
+
+class WithdrawAction(CallbackData, prefix="withdraw"):
+    action: str
+    transaction_id: int
