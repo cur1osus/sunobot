@@ -4,6 +4,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
+from bot.db.enum import UserRole
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
 from bot.keyboards.inline import ik_main
@@ -25,5 +26,5 @@ async def menu_home(
     await edit_or_answer(
         query,
         text=main_menu_text(user),
-        reply_markup=await ik_main(),
+        reply_markup=await ik_main(is_admin=user.role == UserRole.ADMIN.value),
     )

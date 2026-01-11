@@ -9,10 +9,6 @@ class MusicBack(CallbackData, prefix="music_back"):
     target: str
 
 
-class MusicMode(CallbackData, prefix="music_mode"):
-    mode: str
-
-
 class MusicStyle(CallbackData, prefix="music_style"):
     style: str
 
@@ -33,3 +29,7 @@ class TopupPlan(CallbackData, prefix="topup_plan"):
 class WithdrawAction(CallbackData, prefix="withdraw"):
     action: str
     transaction_id: int
+
+
+class InfoPeriod(CallbackData, prefix="info_period"):
+    period: str

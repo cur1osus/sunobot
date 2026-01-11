@@ -11,6 +11,7 @@ class TransactionStatus(str, enum.Enum):
     PENDING = "pending"
     ASSIGNED = "assigned"
     COMPLETED = "completed"
+    FAILED = "failed"
     SUCCESS = "success"
     REFUNDED = "refunded"
 
@@ -19,3 +20,10 @@ class TransactionType(str, enum.Enum):
     TOPUP = "topup"
     REFERRAL_BONUS = "referral_bonus"
     WITHDRAW_REQUEST = "withdraw_request"
+
+
+class UsageEventType(str, enum.Enum):
+    SONG = "song_generated"
+    AI_TEXT = "ai_text"
+    MANUAL_TEXT = "manual_text"
+    INSTRUMENTAL = "instrumental"

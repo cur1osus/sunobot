@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot.background_tasks import schedule_music_task
+from bot.db.enum import UsageEventType, UserRole
 from bot.db.func import charge_user_credits, refund_user_credits
 from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.inline import ik_back_home, ik_main
@@ -15,6 +17,7 @@ from bot.utils.agent_platform import build_agent_platform_client
 from bot.utils.music_state import get_music_data, update_music_data
 from bot.utils.suno_api import SunoAPIError, build_suno_client
 from bot.utils.texts import MUSIC_TITLE_TEXT
+from bot.utils.usage_events import record_usage_event
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -27,7 +30,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MAX_QUICK_PROMPT_LEN = 500
+SECTION_LINE_RE = re.compile(
+    r"^\s*[\[\(\{]?\s*"
+    r"(?:куплет|припев|бридж|мост|интро|аутро|проигрыш|кода|финал"
+    r"|verse|chorus|bridge|intro|outro|pre\s*chorus|hook|refrain)"
+    r"\s*(?:\d+|[ivx]+)?\s*[\]\)\}]?\s*[:\-–—]?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _client() -> SunoClient:
@@ -41,16 +50,24 @@ def _lyrics_client() -> AgentPlatformClient:
 def _first_line(text: str) -> str:
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped:
-            return stripped
+        if not stripped:
+            continue
+        if SECTION_LINE_RE.match(stripped):
+            continue
+        return stripped
     return ""
 
 
-async def ask_for_title(state: FSMContext, message: Message) -> None:
+async def ask_for_title(
+    state: FSMContext,
+    message: Message,
+    *,
+    back_to: MusicBackTarget = MusicBackTarget.PROMPT,
+) -> None:
     await state.set_state(MusicGenerationState.title)
     await message.answer(
         MUSIC_TITLE_TEXT,
-        reply_markup=await ik_back_home(back_to=MusicBackTarget.STYLE),
+        reply_markup=await ik_back_home(back_to=back_to),
     )
 
 
@@ -72,16 +89,13 @@ async def start_generation(
     style = data.style if custom_mode else ""
     title = data.title if custom_mode else ""
 
+    if not custom_mode:
+        await update_music_data(state, custom_mode=True)
+        custom_mode = True
+
     if not generation_prompt:
         await message.answer("Промпт не задан.")
         return
-
-    if not custom_mode and prompt and len(prompt) > MAX_QUICK_PROMPT_LEN:
-        generation_prompt = prompt[:MAX_QUICK_PROMPT_LEN].rstrip()
-        await update_music_data(state, prompt=generation_prompt)
-        await message.answer(
-            "Текст превышает 500 символов, обрезал для быстрого режима."
-        )
 
     credits_cost = 2
     if not await charge_user_credits(
@@ -119,6 +133,13 @@ async def start_generation(
         await state.clear()
         return
 
+    if instrumental:
+        await record_usage_event(
+            session=session,
+            user_idpk=user.id,
+            event_type=UsageEventType.INSTRUMENTAL.value,
+        )
+
     base_name = title.strip() if title.strip() else _first_line(prompt)
     if not base_name:
         base_name = "Трек"
@@ -138,6 +159,6 @@ async def start_generation(
 
     await message.answer(
         f"Задача {task_id} создана. Я пришлю файл, когда трек будет готов.",
-        reply_markup=await ik_main(),
+        reply_markup=await ik_main(is_admin=user.role == UserRole.ADMIN.value),
     )
     await state.clear()

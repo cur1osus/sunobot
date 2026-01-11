@@ -9,9 +9,9 @@ from bot.settings import se
 
 SONG_PROMPT_SUFFIX = (
     "Сгенерируй полноценный текст песни с четкой структурой: Куплет 1, "
-    "Припев, Куплет 2"
+    "Припев, Куплет 2, Бридж, Завершающий куплет"
     "Обязательно добавь яркий запоминающийся припев и сделай плавные переходы между частями. "
-    "Если не указан язык, пиши на русском. Отправь только текст песни. Не больше 500 символов."
+    "Если не указан язык, пиши на русском. Отправь только текст песни."
 )
 
 
@@ -43,12 +43,6 @@ class AgentPlatformClient:
         if self.base_url.endswith("/chat/completions"):
             return self.base_url
         return f"{self.base_url}/chat/completions"
-
-    def _limit_text(self, text: str, limit: int = 500) -> str:
-        trimmed = text.strip()
-        if len(trimmed) <= limit:
-            return trimmed
-        return trimmed[:limit].rstrip()
 
     async def generate_song_text(self, *, prompt: str) -> str:
         if not prompt:
@@ -101,7 +95,7 @@ class AgentPlatformClient:
         if not content:
             raise AgentPlatformAPIError("Пустой ответ от AgentPlatform.")
 
-        return self._limit_text(str(content))
+        return str(content).strip()
 
 
 def build_agent_platform_client() -> AgentPlatformClient:

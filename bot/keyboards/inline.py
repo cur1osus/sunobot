@@ -5,9 +5,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.factories import (
+    InfoPeriod,
     MenuAction,
     MusicBack,
-    MusicMode,
     MusicStyle,
     MusicTextAction,
     TopupMethod,
@@ -20,7 +20,7 @@ LIMIT_BUTTONS: Final[int] = 100
 BACK_BUTTON_TEXT = "⬅️ Назад"
 
 
-async def ik_main() -> InlineKeyboardMarkup:
+async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="🎼 Создать новую песню",
@@ -38,6 +38,11 @@ async def ik_main() -> InlineKeyboardMarkup:
         text="🪙 Заработать",
         callback_data=MenuAction(action="earn").pack(),
     )
+    if is_admin:
+        builder.button(
+            text="ℹ️ Инфо",
+            callback_data=MenuAction(action="info").pack(),
+        )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -101,21 +106,6 @@ async def ik_music_text_menu() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def ik_music_modes() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="Быстрый (промпт)",
-        callback_data=MusicMode(mode="quick").pack(),
-    )
-    builder.button(
-        text="Кастом (стиль+название)",
-        callback_data=MusicMode(mode="custom").pack(),
-    )
-    _append_nav(builder, back_to=MusicBackTarget.HOME)
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 async def ik_music_styles() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
@@ -154,7 +144,7 @@ async def ik_music_styles() -> InlineKeyboardMarkup:
         text="✏️ Свой стиль",
         callback_data=MusicStyle(style="custom").pack(),
     )
-    _append_nav(builder, back_to=MusicBackTarget.MODE)
+    _append_nav(builder, back_to=MusicBackTarget.TITLE)
     builder.adjust(2, 2, 2, 2, 1, 2)
     return builder.as_markup()
 
@@ -214,7 +204,42 @@ async def ik_withdraw_manager(transaction_id: int) -> InlineKeyboardMarkup:
             action="done", transaction_id=transaction_id
         ).pack(),
     )
+    builder.button(
+        text="⚠️ Ошибка",
+        callback_data=WithdrawAction(
+            action="error", transaction_id=transaction_id
+        ).pack(),
+    )
     builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_withdraw_cancel(transaction_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отмена",
+        callback_data=WithdrawAction(
+            action="cancel", transaction_id=transaction_id
+        ).pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def ik_info_periods(selected: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    periods = [("day", "День"), ("week", "Неделя"), ("month", "Месяц")]
+    for key, label in periods:
+        prefix = "✅ " if key == selected else ""
+        builder.button(
+            text=f"{prefix}{label}",
+            callback_data=InfoPeriod(period=key).pack(),
+        )
+    builder.button(
+        text=BACK_BUTTON_TEXT,
+        callback_data=MenuAction(action="home").pack(),
+    )
+    builder.adjust(3, 1)
     return builder.as_markup()
 
 

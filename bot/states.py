@@ -6,7 +6,6 @@ class BaseUserState(StatesGroup):
 
 
 class MusicGenerationState(StatesGroup):
-    choose_mode = State()
     prompt = State()
     style = State()
     title = State()
@@ -16,3 +15,7 @@ class MusicGenerationState(StatesGroup):
 class WithdrawState(StatesGroup):
     amount = State()
     details = State()
+
+
+class ManagerWithdrawState(StatesGroup):
+    error_reason = State()

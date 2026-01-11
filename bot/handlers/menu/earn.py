@@ -10,7 +10,8 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import select
 
-from bot.db.models import UserModel
+from bot.db.enum import TransactionStatus, TransactionType
+from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.factories import MenuAction
 from bot.keyboards.inline import ik_earn_menu
@@ -43,11 +44,40 @@ async def menu_earn(
             UserModel.referrer_id == user.user_id
         )
     )
+    referral_payments_count = await session.scalar(
+        select(func.count(TransactionModel.id)).where(
+            TransactionModel.user_idpk == user.id,
+            TransactionModel.type == TransactionType.REFERRAL_BONUS.value,
+            TransactionModel.status == TransactionStatus.SUCCESS.value,
+        )
+    )
+    paid_kopeks = await session.scalar(
+        select(func.coalesce(func.sum(TransactionModel.amount), 0)).where(
+            TransactionModel.user_idpk == user.id,
+            TransactionModel.type == TransactionType.WITHDRAW_REQUEST.value,
+            TransactionModel.status == TransactionStatus.COMPLETED.value,
+        )
+    )
+    payout_kopeks = await session.scalar(
+        select(func.coalesce(func.sum(TransactionModel.amount), 0)).where(
+            TransactionModel.user_idpk == user.id,
+            TransactionModel.type == TransactionType.WITHDRAW_REQUEST.value,
+            TransactionModel.status.in_(
+                [
+                    TransactionStatus.PENDING.value,
+                    TransactionStatus.ASSIGNED.value,
+                ]
+            ),
+        )
+    )
     share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(share_text)}"
     text = earn_text(
         bot_name=bot_name,
         referrals_count=referrals_count or 0,
         balance_kopeks=user.balance,
+        paid_kopeks=int(paid_kopeks or 0),
+        referral_payments_count=referral_payments_count or 0,
+        payout_kopeks=int(payout_kopeks or 0),
         ref_link=ref_link,
     )
     await edit_or_answer(

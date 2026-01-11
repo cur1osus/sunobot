@@ -35,6 +35,10 @@ class UserModel(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    usage_events: Mapped[list["UsageEventModel"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 class TransactionModel(Base):
@@ -67,3 +71,16 @@ class TransactionModel(Base):
     )
 
     user: Mapped[UserModel] = relationship(back_populates="transactions")
+
+
+class UsageEventModel(Base):
+    __tablename__ = "usage_events"
+
+    user_idpk: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        server_default=func.current_timestamp(),
+    )
+
+    user: Mapped[UserModel] = relationship(back_populates="usage_events")

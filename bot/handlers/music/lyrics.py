@@ -8,21 +8,24 @@ from aiogram.types import CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from bot.db.enum import UsageEventType
 from bot.db.func import charge_user_credits, refund_user_credits
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.factories import MusicTextAction
-from bot.keyboards.inline import ik_back_home, ik_music_modes
+from bot.keyboards.inline import ik_back_home, ik_music_text_menu
 from bot.states import MusicGenerationState
 from bot.utils.agent_platform import AgentPlatformAPIError
 from bot.utils.messaging import edit_or_answer
-from bot.utils.music_helpers import _lyrics_client, start_generation  # noqa: PLC2701
+from bot.utils.music_helpers import _lyrics_client, ask_for_title  # noqa: PLC2701
 from bot.utils.music_state import get_music_data, update_music_data
 from bot.utils.texts import (
-    MUSIC_MODES_TEXT,
+    LYRICS_MENU_TEXT,
     MUSIC_PROMPT_AI_TEXT,
+    MUSIC_PROMPT_INSTRUMENTAL_TEXT,
     MUSIC_PROMPT_MANUAL_TEXT,
 )
+from bot.utils.usage_events import record_usage_event
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -32,7 +35,17 @@ logger = logging.getLogger(__name__)
 async def lyrics_ai(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
     await state.set_state(MusicGenerationState.prompt)
-    await update_music_data(state, prompt_source="ai", instrumental=False)
+    await update_music_data(
+        state,
+        prompt_source="ai",
+        instrumental=False,
+        custom_mode=True,
+        prompt="",
+        style="",
+        title="",
+        prompt_after_mode=False,
+        prompt_after_title=False,
+    )
     await edit_or_answer(
         query,
         text=MUSIC_PROMPT_AI_TEXT,
@@ -44,7 +57,17 @@ async def lyrics_ai(query: CallbackQuery, state: FSMContext) -> None:
 async def lyrics_manual(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
     await state.set_state(MusicGenerationState.prompt)
-    await update_music_data(state, prompt_source="manual", instrumental=False)
+    await update_music_data(
+        state,
+        prompt_source="manual",
+        instrumental=False,
+        custom_mode=True,
+        prompt="",
+        style="",
+        title="",
+        prompt_after_mode=False,
+        prompt_after_title=False,
+    )
     await edit_or_answer(
         query,
         text=MUSIC_PROMPT_MANUAL_TEXT,
@@ -55,12 +78,22 @@ async def lyrics_manual(query: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(MusicTextAction.filter(F.action == "instrumental"))
 async def lyrics_instrumental(query: CallbackQuery, state: FSMContext) -> None:
     await query.answer()
-    await state.set_state(MusicGenerationState.choose_mode)
-    await update_music_data(state, prompt_source="instrumental", instrumental=True)
+    await state.set_state(MusicGenerationState.prompt)
+    await update_music_data(
+        state,
+        prompt_source="instrumental",
+        instrumental=True,
+        custom_mode=True,
+        prompt="",
+        style="",
+        title="",
+        prompt_after_mode=False,
+        prompt_after_title=False,
+    )
     await edit_or_answer(
         query,
-        text=MUSIC_MODES_TEXT,
-        reply_markup=await ik_music_modes(),
+        text=MUSIC_PROMPT_INSTRUMENTAL_TEXT,
+        reply_markup=await ik_back_home(back_to=MusicBackTarget.TEXT_MENU),
     )
 
 
@@ -110,26 +143,30 @@ async def prompt_received(
         await update_music_data(state, prompt=lyrics)
         preview = f"Текст песни:\n\n{lyrics}"
         await message.answer(preview[:4000])
+        await record_usage_event(
+            session=session,
+            user_idpk=user.id,
+            event_type=UsageEventType.AI_TEXT.value,
+        )
     else:
         await update_music_data(state, prompt=prompt)
-    if data.prompt_after_mode or data.prompt_after_title:
-        await update_music_data(
-            state,
-            prompt_after_mode=False,
-            prompt_after_title=False,
-        )
-        await start_generation(
-            message,
-            state,
-            user=user,
-            session=session,
-            sessionmaker=sessionmaker,
-            redis=redis,
-        )
+        if data.prompt_source == "manual":
+            await record_usage_event(
+                session=session,
+                user_idpk=user.id,
+                event_type=UsageEventType.MANUAL_TEXT.value,
+            )
+
+    if data.prompt_source == "instrumental":
+        await ask_for_title(state, message, back_to=MusicBackTarget.PROMPT)
         return
 
-    await state.set_state(MusicGenerationState.choose_mode)
+    if data.prompt_source in {"ai", "manual", "instrumental"}:
+        await ask_for_title(state, message, back_to=MusicBackTarget.PROMPT)
+        return
+
+    await state.clear()
     await message.answer(
-        text="Выбери режим генерации Suno:",
-        reply_markup=await ik_music_modes(),
+        text=LYRICS_MENU_TEXT,
+        reply_markup=await ik_music_text_menu(),
     )
