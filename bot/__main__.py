@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot import handlers
 from bot.db.base import close_db, create_db_session_pool, init_db
+from bot.middlewares.metrics import MetricsMiddleware
 from bot.middlewares.throw_session import ThrowDBSessionMiddleware
 from bot.middlewares.throw_user_model import ThrowUserMiddleware
 from bot.scheduler import default_scheduler as scheduler
@@ -87,6 +88,7 @@ async def startup(dispatcher: Dispatcher, bot: Bot, se: Settings, redis: Redis) 
         }
     )
 
+    dispatcher.update.outer_middleware(MetricsMiddleware())
     dispatcher.update.outer_middleware(ThrowDBSessionMiddleware())
     dispatcher.update.outer_middleware(ThrowUserMiddleware())
 
