@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
+from collections import deque
 from typing import Any
 
 import aiohttp
@@ -10,6 +13,37 @@ from bot.settings import se
 
 class SunoAPIError(Exception):
     """Errors returned from the Suno API."""
+
+
+class _RateLimiter:
+    def __init__(self, *, max_requests: int, window_seconds: float) -> None:
+        self._max_requests = max_requests
+        self._window_seconds = window_seconds
+        self._timestamps: deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def wait(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            cutoff = now - self._window_seconds
+            while self._timestamps and self._timestamps[0] <= cutoff:
+                self._timestamps.popleft()
+
+            if len(self._timestamps) < self._max_requests:
+                self._timestamps.append(now)
+                return
+
+            sleep_for = self._timestamps[0] + self._window_seconds - now
+            if sleep_for > 0:
+                await asyncio.sleep(sleep_for)
+            now = time.monotonic()
+            cutoff = now - self._window_seconds
+            while self._timestamps and self._timestamps[0] <= cutoff:
+                self._timestamps.popleft()
+            self._timestamps.append(now)
+
+
+_SUNO_LIMITER = _RateLimiter(max_requests=20, window_seconds=10)
 
 
 class SunoClient:
@@ -35,9 +69,10 @@ class SunoClient:
         method: str,
         path: str,
         *,
-        json: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        await _SUNO_LIMITER.wait()
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -49,12 +84,12 @@ class SunoClient:
                     method=method,
                     url=url,
                     headers=headers,
-                    json=json,
+                    json=payload,
                     params=params,
                     timeout=aiohttp.ClientTimeout(total=self.poll_timeout),
                 ) as response:
                     try:
-                        payload: dict[str, Any] = await response.json()
+                        response_payload: dict[str, Any] = await response.json()
                     except (aiohttp.ContentTypeError, json.JSONDecodeError) as err:
                         text = await response.text()
                         raise SunoAPIError(
@@ -64,17 +99,19 @@ class SunoClient:
 
                     if response.status >= 400:
                         raise SunoAPIError(
-                            payload.get("msg")
-                            or f"Suno API error {response.status}: {payload}"
+                            response_payload.get("msg")
+                            or f"Suno API error {response.status}: {response_payload}"
                         )
 
-                    code = payload.get("code", 200)
+                    code = response_payload.get("code", 200)
                     if code != 200:
                         raise SunoAPIError(
-                            payload.get("msg", f"Suno API returned code {code}")
+                            response_payload.get(
+                                "msg", f"Suno API returned code {code}"
+                            )
                         )
 
-                    return payload
+                    return response_payload
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise SunoAPIError(f"Ошибка запроса к Suno API: {err}") from err
 
@@ -101,7 +138,7 @@ class SunoClient:
         data = await self._request(
             "POST",
             "/api/v1/generate",
-            json=payload,
+            payload=payload,
         )
         task_id = data.get("data", {}).get("taskId")
         if not task_id:
@@ -121,7 +158,7 @@ class SunoClient:
         data = await self._request(
             "POST",
             "/api/v1/lyrics",
-            json=payload,
+            payload=payload,
         )
 
         task_id = data.get("data", {}).get("taskId")

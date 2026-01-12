@@ -8,13 +8,19 @@ from typing import Final
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.enum import TransactionStatus, TransactionType, UsageEventType
-from bot.db.models import TransactionModel, UsageEventModel, UserModel
+from bot.db.enum import (
+    MusicTaskStatus,
+    TransactionStatus,
+    TransactionType,
+    UsageEventType,
+)
+from bot.db.models import MusicTaskModel, TransactionModel, UsageEventModel, UserModel
 from bot.utils.formatting import format_rub
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
 from bot.utils.suno_api import SunoAPIError, build_suno_client
 
 ONLINE_MINUTES: Final[int] = 15
+MUSIC_TASK_SUCCESS: Final[str] = MusicTaskStatus.SUCCESS.value
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +85,8 @@ async def build_admin_info_text(session: AsyncSession, period: str) -> str:
         bounds.prev_end,
     )
 
-    songs_current = await _count_events(
-        session,
-        UsageEventType.SONG.value,
-        bounds.start,
-        bounds.end,
-    )
-    songs_prev = await _count_events(
-        session,
-        UsageEventType.SONG.value,
-        bounds.prev_start,
-        bounds.prev_end,
-    )
+    songs_current = await _count_music_tasks(session, bounds.start, bounds.end)
+    songs_prev = await _count_music_tasks(session, bounds.prev_start, bounds.prev_end)
     ai_texts_current = await _count_events(
         session,
         UsageEventType.AI_TEXT.value,
@@ -135,7 +131,7 @@ async def build_admin_info_text(session: AsyncSession, period: str) -> str:
         f"Продажи (звезды): {_format_sales_by_currency(sales_current, sales_prev, STARS_CURRENCY)}\n"
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
         f"Кредиты Suno: {suno_credits}\n\n"
-        f"Сгенерированные песни: {songs_current} ({_format_delta(songs_current, songs_prev)})\n"
+        f"Песни: {songs_current} ({_format_delta(songs_current, songs_prev)})\n"
         f"Сгенерированные тексты: {ai_texts_current} ({_format_delta(ai_texts_current, ai_texts_prev)})\n"
         f"Сгенерированные инструменталы: {instrumental_current} ({_format_delta(instrumental_current, instrumental_prev)})\n\n"
         f"Тексты введены вручную: {manual_texts_current} ({_format_delta(manual_texts_current, manual_texts_prev)})\n\n"
@@ -168,6 +164,23 @@ async def _count_events(
                 UsageEventModel.event_type == event_type,
                 UsageEventModel.created_at >= start,
                 UsageEventModel.created_at < end,
+            )
+        )
+        or 0
+    )
+
+
+async def _count_music_tasks(
+    session: AsyncSession,
+    start: datetime,
+    end: datetime,
+) -> int:
+    return (
+        await session.scalar(
+            select(func.count(MusicTaskModel.id)).where(
+                MusicTaskModel.status == MUSIC_TASK_SUCCESS,
+                MusicTaskModel.updated_at >= start,
+                MusicTaskModel.updated_at < end,
             )
         )
         or 0

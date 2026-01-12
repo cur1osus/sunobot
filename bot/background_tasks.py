@@ -1,23 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
-from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot
+from sqlalchemy import or_, select
 
-from bot.db.enum import UsageEventType
-from bot.scheduler import CancelJob, default_scheduler
+from bot.db.enum import MusicTaskStatus
+from bot.db.models import MusicTaskModel
+from bot.scheduler import default_scheduler
 from bot.utils.background_task_helpers import _refund_credits, _send_tracks
 from bot.utils.suno_api import SunoAPIError, build_suno_client
-from bot.utils.usage_events import record_usage_event_by_user_id
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+POLL_INTERVAL_SECONDS = 10
+MAX_TASKS_PER_RUN = 20
+MAX_POLL_ERRORS = 3
+MIN_POLL_TIMEOUT = 600
 
 TERMINAL_STATUSES = {
     "SUCCESS",
@@ -32,128 +40,196 @@ STATUS_MESSAGES = {
     "CALLBACK_EXCEPTION": "Произошла ошибка при обработке результата.",
     "SENSITIVE_WORD_ERROR": "В тексте обнаружены запрещенные слова.",
 }
-MAX_POLL_ERRORS = 3
-MIN_POLL_TIMEOUT = 600
-MAX_TIMEOUT_EXTENSIONS = 2
+
+_POLL_LOCK = asyncio.Lock()
 
 
-@dataclass
-class MusicTaskContext:
-    started_at: float
-    errors: int = 0
-    timeout_extensions: int = 0
-
-
-def schedule_music_task(
+def schedule_music_polling(
     *,
     bot: Bot,
-    chat_id: int,
-    task_id: str,
-    filename_base: str,
-    poll_interval: float,
-    poll_timeout: int,
-    user_id: int,
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
-    credits_cost: int,
 ) -> None:
-    interval_seconds = max(1, int(round(poll_interval)))
-    effective_timeout = max(poll_timeout, MIN_POLL_TIMEOUT)
-    context = MusicTaskContext(started_at=time.monotonic())
-    default_scheduler.every(interval_seconds).seconds.do(
-        _poll_music_task,
+    if default_scheduler.get_jobs(tag="music_poll"):
+        return
+    default_scheduler.every(POLL_INTERVAL_SECONDS).seconds.do(
+        poll_music_tasks,
         bot=bot,
-        chat_id=chat_id,
-        task_id=task_id,
-        filename_base=filename_base,
-        context=context,
-        poll_timeout=effective_timeout,
-        user_id=user_id,
         sessionmaker=sessionmaker,
         redis=redis,
-        credits_cost=credits_cost,
-    )
+    ).tag("music_poll")
 
 
-async def _poll_music_task(
+async def poll_music_tasks(
     *,
     bot: Bot,
-    chat_id: int,
-    task_id: str,
-    filename_base: str,
-    context: MusicTaskContext,
-    poll_timeout: int,
-    user_id: int,
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
-    credits_cost: int,
-) -> CancelJob | None:
-    if time.monotonic() - context.started_at > poll_timeout:
-        if context.timeout_extensions < MAX_TIMEOUT_EXTENSIONS:
-            context.timeout_extensions += 1
-            context.started_at = time.monotonic()
-            logger.warning(
-                "Ожидание по задаче %s истекло, продлеваю (%s/%s)",
-                task_id,
-                context.timeout_extensions,
-                MAX_TIMEOUT_EXTENSIONS,
-            )
-            return None
-        logger.warning("Ожидание по задаче %s истекло", task_id)
-        await _refund_credits(
-            sessionmaker=sessionmaker,
-            redis=redis,
-            user_id=user_id,
-            amount=credits_cost,
-        )
-        await bot.send_message(chat_id, "Генерация превысила лимит ожидания.")
-        return CancelJob
-
-    client = build_suno_client()
-    try:
-        details = await client.get_task_details(task_id)
-    except SunoAPIError as err:
-        context.errors += 1
-        logger.warning("Не удалось опросить задачу %s: %s", task_id, err)
-        if context.errors >= MAX_POLL_ERRORS:
-            await _refund_credits(
+) -> None:
+    if _POLL_LOCK.locked():
+        return
+    async with _POLL_LOCK:
+        async with sessionmaker() as session:
+            await _poll_music_tasks_inner(
+                bot=bot,
+                session=session,
                 sessionmaker=sessionmaker,
                 redis=redis,
-                user_id=user_id,
-                amount=credits_cost,
             )
-            await bot.send_message(
-                chat_id,
-                "Не удалось получить результат генерации. Попробуйте позже.",
+
+
+async def _poll_music_tasks_inner(
+    *,
+    bot: Bot,
+    session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+) -> None:
+    now = datetime.now(MOSCOW_TZ).replace(tzinfo=None)
+    cutoff = now - timedelta(seconds=POLL_INTERVAL_SECONDS)
+    stmt = (
+        select(MusicTaskModel)
+        .where(
+            MusicTaskModel.status.in_(
+                [MusicTaskStatus.PENDING.value, MusicTaskStatus.PROCESSING.value]
             )
-            return CancelJob
-        return None
+        )
+        .where(
+            or_(
+                MusicTaskModel.last_polled_at.is_(None),
+                MusicTaskModel.last_polled_at < cutoff,
+            )
+        )
+        .order_by(MusicTaskModel.created_at.asc())
+        .limit(MAX_TASKS_PER_RUN)
+    )
+    tasks = (await session.scalars(stmt)).all()
+    if not tasks:
+        return
+
+    client = build_suno_client()
+
+    for task in tasks:
+        await _poll_single_task(
+            bot=bot,
+            session=session,
+            sessionmaker=sessionmaker,
+            redis=redis,
+            task=task,
+            client=client,
+            now=now,
+        )
+
+
+async def _poll_single_task(
+    *,
+    bot: Bot,
+    session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    task: MusicTaskModel,
+    client,
+    now: datetime,
+) -> None:
+    task.last_polled_at = now
+    if task.status == MusicTaskStatus.PENDING.value:
+        task.status = MusicTaskStatus.PROCESSING.value
+    await session.commit()
+
+    if _is_timed_out(task, now):
+        await _handle_timeout(
+            bot=bot,
+            session=session,
+            sessionmaker=sessionmaker,
+            redis=redis,
+            task=task,
+        )
+        return
+
+    try:
+        details = await client.get_task_details(task.task_id)
+    except SunoAPIError as err:
+        task.errors += 1
+        await session.commit()
+        logger.warning("Не удалось опросить задачу %s: %s", task.task_id, err)
+        if task.errors >= MAX_POLL_ERRORS:
+            await _handle_error(
+                bot=bot,
+                session=session,
+                sessionmaker=sessionmaker,
+                redis=redis,
+                task=task,
+                status_message="Не удалось получить результат генерации. Попробуйте позже.",
+            )
+        return
 
     data = details.get("data", {}) or {}
     status = str(data.get("status") or "").upper()
 
     if status == "SUCCESS":
-        sent_any = await _send_tracks(bot, chat_id, filename_base, data)
-        if sent_any:
-            await record_usage_event_by_user_id(
-                sessionmaker=sessionmaker,
-                user_id=user_id,
-                event_type=UsageEventType.SONG.value,
-            )
-        return CancelJob
+        await _send_tracks(bot, task.chat_id, task.filename_base, data)
+        task.status = MusicTaskStatus.SUCCESS.value
+        await session.commit()
+        return
 
     if status in TERMINAL_STATUSES:
-        logger.warning("Задача %s завершилась со статусом %s", task_id, status)
-        await _refund_credits(
+        await _handle_error(
+            bot=bot,
+            session=session,
             sessionmaker=sessionmaker,
             redis=redis,
-            user_id=user_id,
-            amount=credits_cost,
+            task=task,
+            status_message=STATUS_MESSAGES.get(
+                status, "Генерация завершилась с ошибкой."
+            ),
         )
-        await bot.send_message(
-            chat_id,
-            STATUS_MESSAGES.get(status, "Генерация завершилась с ошибкой."),
-        )
-        return CancelJob
+        return
 
-    return None
+    task.status = MusicTaskStatus.PROCESSING.value
+    await session.commit()
+
+
+def _is_timed_out(task: MusicTaskModel, now: datetime) -> bool:
+    timeout = max(task.poll_timeout, MIN_POLL_TIMEOUT)
+    if not task.created_at:
+        return False
+    return (now - task.created_at).total_seconds() > timeout
+
+
+async def _handle_timeout(
+    *,
+    bot: Bot,
+    session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    task: MusicTaskModel,
+) -> None:
+    task.status = MusicTaskStatus.TIMEOUT.value
+    await session.commit()
+    await _refund_credits(
+        sessionmaker=sessionmaker,
+        redis=redis,
+        user_id=task.user.user_id,
+        amount=task.credits_cost,
+    )
+    await bot.send_message(task.chat_id, "Генерация превысила лимит ожидания.")
+
+
+async def _handle_error(
+    *,
+    bot: Bot,
+    session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    task: MusicTaskModel,
+    status_message: str,
+) -> None:
+    task.status = MusicTaskStatus.ERROR.value
+    await session.commit()
+    await _refund_credits(
+        sessionmaker=sessionmaker,
+        redis=redis,
+        user_id=task.user.user_id,
+        amount=task.credits_cost,
+    )
+    await bot.send_message(task.chat_id, status_message)

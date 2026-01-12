@@ -10,6 +10,7 @@ from bot.utils.music_state import update_music_data
 from bot.utils.texts import MUSIC_STYLE_TEXT
 
 router = Router()
+MAX_TITLE_LEN = 100
 
 
 @router.message(MusicGenerationState.title)
@@ -20,6 +21,9 @@ async def title_received(
     title = (message.text or "").strip()
     if not title:
         await message.answer("Название не должно быть пустым.")
+        return
+    if len(title) > MAX_TITLE_LEN:
+        await message.answer("Название слишком длинное. Укоротите до 100 символов.")
         return
 
     await update_music_data(state, title=title, custom_mode=True)

@@ -29,6 +29,8 @@ from bot.utils.usage_events import record_usage_event
 
 router = Router()
 logger = logging.getLogger(__name__)
+MAX_PROMPT_LEN = 1000
+MAX_LYRICS_LEN = 5000
 
 
 @router.callback_query(MusicTextAction.filter(F.action == "ai"))
@@ -110,8 +112,13 @@ async def prompt_received(
     if not prompt:
         await message.answer("Текст не должен быть пустым.")
         return
-
     data = await get_music_data(state)
+    if data.prompt_source == "manual" and len(prompt) > MAX_LYRICS_LEN:
+        await message.answer("Текст песни слишком длинный. Укоротите до 5000 символов.")
+        return
+    if data.prompt_source != "manual" and len(prompt) > MAX_PROMPT_LEN:
+        await message.answer("Промпт слишком длинный. Укоротите до 1000 символов.")
+        return
     if data.prompt_source == "ai":
         if not await charge_user_credits(
             session=session,

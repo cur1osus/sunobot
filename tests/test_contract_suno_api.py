@@ -21,10 +21,10 @@ async def test_generate_music_payload(monkeypatch) -> None:
 
     captured = {}
 
-    async def fake_request(method, path, *, json=None, params=None):
+    async def fake_request(method, path, *, payload=None, params=None):
         captured["method"] = method
         captured["path"] = path
-        captured["json"] = json
+        captured["json"] = payload
         captured["params"] = params
         return {"data": {"taskId": "task"}}
 
@@ -60,7 +60,7 @@ async def test_get_task_details_request(monkeypatch) -> None:
         poll_timeout=2,
     )
 
-    async def fake_request(method, path, *, json=None, params=None):
+    async def fake_request(method, path, *, payload=None, params=None):
         assert method == "GET"
         assert path == "/api/v1/generate/record-info"
         assert params == {"taskId": "id"}

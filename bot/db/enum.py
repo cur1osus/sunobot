@@ -23,7 +23,14 @@ class TransactionType(str, enum.Enum):
 
 
 class UsageEventType(str, enum.Enum):
-    SONG = "song_generated"
     AI_TEXT = "ai_text"
     MANUAL_TEXT = "manual_text"
     INSTRUMENTAL = "instrumental"
+
+
+class MusicTaskStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    ERROR = "error"
+    TIMEOUT = "timeout"

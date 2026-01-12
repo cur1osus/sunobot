@@ -17,6 +17,7 @@ from bot.utils.music_state import update_music_data
 from bot.utils.texts import MUSIC_STYLE_CUSTOM_TEXT
 
 router = Router()
+MAX_STYLE_LEN = 1000
 
 
 @router.message(MusicGenerationState.style)
@@ -31,6 +32,9 @@ async def style_received(
     style = (message.text or "").strip()
     if not style:
         await message.answer("Стиль не должен быть пустым.")
+        return
+    if len(style) > MAX_STYLE_LEN:
+        await message.answer("Стиль слишком длинный. Укоротите до 1000 символов.")
         return
 
     await update_music_data(state, style=style)
