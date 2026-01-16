@@ -70,6 +70,18 @@ class PaymentsSettings:
             "YOOKASSA_PROVIDER_TOKEN",
             "",
         )
+        self.yookassa_tax_system_code = int(
+            os.environ.get("YOOKASSA_TAX_SYSTEM_CODE", "1")
+        )
+        self.yookassa_vat_code = int(os.environ.get("YOOKASSA_VAT_CODE", "1"))
+        self.yookassa_payment_mode = os.environ.get(
+            "YOOKASSA_PAYMENT_MODE",
+            "full_payment",
+        )
+        self.yookassa_payment_subject = os.environ.get(
+            "YOOKASSA_PAYMENT_SUBJECT",
+            "commodity",
+        )
 
 
 class Settings:

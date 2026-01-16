@@ -62,10 +62,10 @@ _TOPUP_METHODS = {
 
 _TOPUP_TARIFFS: dict[str, list[TopupTariff]] = {
     "card": [
-        TopupTariff(plan="199", price=199, credits=6, songs=3),
-        TopupTariff(plan="490", price=490, credits=20, songs=10),
-        TopupTariff(plan="990", price=990, credits=50, songs=25),
-        TopupTariff(plan="1990", price=1990, credits=120, songs=60),
+        TopupTariff(plan="10", price=10, credits=6, songs=3),
+        TopupTariff(plan="20", price=20, credits=20, songs=10),
+        TopupTariff(plan="30", price=30, credits=50, songs=25),
+        TopupTariff(plan="40", price=40, credits=120, songs=60),
     ],
     "stars": [
         TopupTariff(plan="1", price=1, credits=6, songs=3),

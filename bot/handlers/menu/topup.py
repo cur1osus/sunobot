@@ -71,4 +71,7 @@ async def topup_plan(query: CallbackQuery, callback_data: TopupPlan) -> None:
         provider_token=invoice.provider_token,
         currency=invoice.currency,
         prices=invoice.prices,
+        provider_data=invoice.provider_data,
+        need_email=invoice.need_email,
+        send_email_to_provider=invoice.send_email_to_provider,
     )
