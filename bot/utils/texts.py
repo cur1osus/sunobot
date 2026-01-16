@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from bot.db.redis.user_model import UserRD
+from bot.settings import se
 from bot.utils.formatting import format_rub
 
 MAIN_MENU_TEXT = (
@@ -60,7 +62,7 @@ _TOPUP_METHODS = {
     ),
 }
 
-_TOPUP_TARIFFS: dict[str, list[TopupTariff]] = {
+_DEFAULT_TOPUP_TARIFFS: dict[str, list[TopupTariff]] = {
     "card": [
         TopupTariff(plan="10", price=10, credits=6, songs=3),
         TopupTariff(plan="20", price=20, credits=20, songs=10),
@@ -74,6 +76,56 @@ _TOPUP_TARIFFS: dict[str, list[TopupTariff]] = {
         TopupTariff(plan="4", price=4, credits=120, songs=60),
     ],
 }
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_topup_tariffs(raw: str) -> list[TopupTariff]:
+    tariffs: list[TopupTariff] = []
+    for chunk in raw.split(","):
+        item = chunk.strip()
+        if not item:
+            continue
+        parts = [part.strip() for part in item.split(":")]
+        if len(parts) != 4:
+            logger.warning("Неверный формат тарифа: %s", item)
+            continue
+        plan = parts[0]
+        try:
+            price = int(parts[1])
+            credits = int(parts[2])
+            songs = int(parts[3])
+        except ValueError:
+            logger.warning("Неверные числовые значения тарифа: %s", item)
+            continue
+        if price <= 0 or credits <= 0 or songs <= 0:
+            logger.warning("Тариф должен быть положительным: %s", item)
+            continue
+        tariffs.append(
+            TopupTariff(
+                plan=plan,
+                price=price,
+                credits=credits,
+                songs=songs,
+            )
+        )
+    return tariffs
+
+
+def _load_topup_tariffs() -> dict[str, list[TopupTariff]]:
+    card_tariffs = _parse_topup_tariffs(se.topup.tariffs_card_raw)
+    if not card_tariffs:
+        card_tariffs = _DEFAULT_TOPUP_TARIFFS["card"]
+    stars_tariffs = _parse_topup_tariffs(se.topup.tariffs_stars_raw)
+    if not stars_tariffs:
+        stars_tariffs = _DEFAULT_TOPUP_TARIFFS["stars"]
+    return {
+        "card": card_tariffs,
+        "stars": stars_tariffs,
+    }
+
+
+_TOPUP_TARIFFS = _load_topup_tariffs()
 
 
 def get_topup_method(method: str) -> TopupMethodInfo | None:

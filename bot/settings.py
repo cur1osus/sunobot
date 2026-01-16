@@ -84,6 +84,18 @@ class PaymentsSettings:
         )
 
 
+class TopupSettings:
+    def __init__(self) -> None:
+        self.tariffs_card_raw = os.environ.get(
+            "TOPUP_TARIFFS_CARD",
+            "10:10:6:3,20:20:20:10,30:30:50:25,40:40:120:60",
+        )
+        self.tariffs_stars_raw = os.environ.get(
+            "TOPUP_TARIFFS_STARS",
+            "1:1:6:3,2:2:20:10,3:3:50:25,4:4:120:60",
+        )
+
+
 class Settings:
     bot_token = os.environ.get("BOT_TOKEN", "")
     sep = os.environ.get("SEP", "\n")
@@ -94,6 +106,7 @@ class Settings:
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
     withdraw: WithdrawSettings = WithdrawSettings()
     payments: PaymentsSettings = PaymentsSettings()
+    topup: TopupSettings = TopupSettings()
 
     def mysql_dsn(self) -> URL:
         return URL.create(
