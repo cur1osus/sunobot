@@ -13,12 +13,17 @@ from bot.db.enum import MusicTaskStatus, UsageEventType, UserRole
 from bot.db.func import charge_user_credits, refund_user_credits
 from bot.db.models import MusicTaskModel, UserModel
 from bot.keyboards.enums import MusicBackTarget
-from bot.keyboards.inline import ik_back_home, ik_main
+from bot.keyboards.inline import ik_back_home, ik_main, ik_no_credits
 from bot.states import MusicGenerationState
 from bot.utils.agent_platform import build_agent_platform_client
 from bot.utils.music_state import get_music_data, update_music_data
 from bot.utils.suno_api import SunoAPIError, build_suno_client
-from bot.utils.texts import MUSIC_TITLE_TEXT
+from bot.utils.texts import (
+    MUSIC_NO_CREDITS_TEXT,
+    MUSIC_TITLE_TEXT,
+    music_generation_started_text,
+    music_instrumental_title_text,
+)
 from bot.utils.usage_events import record_usage_event
 
 if TYPE_CHECKING:
@@ -66,9 +71,16 @@ async def ask_for_title(
     *,
     back_to: MusicBackTarget = MusicBackTarget.PROMPT,
 ) -> None:
+    await update_music_data(state, title_back_target=back_to.value)
+    data = await get_music_data(state)
+    text = (
+        music_instrumental_title_text(data.style)
+        if data.instrumental
+        else MUSIC_TITLE_TEXT
+    )
     await state.set_state(MusicGenerationState.title)
     await message.answer(
-        MUSIC_TITLE_TEXT,
+        text,
         reply_markup=await ik_back_home(back_to=back_to),
     )
 
@@ -107,13 +119,12 @@ async def start_generation(
         amount=credits_cost,
     ):
         await message.answer(
-            "Недостаточно кредитов для генерации музыки. Нужно 2 кредита."
+            MUSIC_NO_CREDITS_TEXT,
+            reply_markup=await ik_no_credits(back_to=MusicBackTarget.TITLE),
         )
-        await state.clear()
         return
 
     await state.set_state(MusicGenerationState.waiting)
-    await message.answer("Запускаю генерацию музыки в Suno...")
 
     try:
         task_id = await client.generate_music(
@@ -169,6 +180,12 @@ async def start_generation(
         errors=0,
         credits_cost=credits_cost,
         poll_timeout=max(client.poll_timeout, MIN_POLL_TIMEOUT),
+        topic_key=data.topic or None,
+        style=data.style.strip() or None,
+        prompt_source=data.prompt_source or None,
+        prompt=data.prompt or None,
+        custom_mode=custom_mode,
+        instrumental=instrumental,
     )
     try:
         session.add(music_task)
@@ -186,8 +203,9 @@ async def start_generation(
         await state.clear()
         return
 
+    text = music_generation_started_text(task_id, base_name)
     await message.answer(
-        f"Задача {task_id} создана. Я пришлю файл, когда трек будет готов.",
+        text,
         reply_markup=await ik_main(is_admin=user.role == UserRole.ADMIN.value),
     )
     await state.clear()

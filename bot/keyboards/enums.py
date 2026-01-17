@@ -8,3 +8,6 @@ class MusicBackTarget(str, Enum):
     STYLE = "style"
     TITLE = "title"
     PROMPT = "prompt"
+    TOPIC_STYLE = "topic_style"
+    TOPIC_TEXT_MENU = "topic_text_menu"
+    AI_RESULT = "ai_result"

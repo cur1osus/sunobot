@@ -10,6 +10,9 @@ class MusicGenerationState(StatesGroup):
     style = State()
     title = State()
     waiting = State()
+    topic_style = State()
+    topic_text_menu = State()
+    ai_result = State()
 
 
 class WithdrawState(StatesGroup):

@@ -30,10 +30,12 @@ from bot.middlewares.throw_user_model import ThrowUserMiddleware
 from bot.scheduler import default_scheduler as scheduler
 from bot.scheduler import logger as scheduler_logger
 from bot.settings import Settings, se
+from bot.utils.texts import BOT_DESCRIPTION_TEXT, BOT_INFO_TEXT
 
 load_dotenv()
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+SHORT_DESCRIPTION_LIMIT = 120
 
 
 def _moscow_converter(timestamp: float) -> tuple:
@@ -120,6 +122,33 @@ async def set_default_commands(bot: Bot) -> None:
             BotCommand(command="start", description="start"),
         ]
     )
+    await _set_bot_profile(bot)
+
+
+async def _set_bot_profile(bot: Bot) -> None:
+    short_description = _short_description_text()
+    await bot.set_my_short_description(short_description=short_description)
+    await bot.set_my_description(description=BOT_DESCRIPTION_TEXT)
+
+
+def _short_description_text() -> str:
+    if len(BOT_INFO_TEXT) <= SHORT_DESCRIPTION_LIMIT:
+        return BOT_INFO_TEXT
+    lines: list[str] = []
+    current_len = 0
+    for line in BOT_INFO_TEXT.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        extra_len = len(line) + (1 if lines else 0)
+        if current_len + extra_len > SHORT_DESCRIPTION_LIMIT:
+            break
+        lines.append(line)
+        current_len += extra_len
+    if lines:
+        return "\n".join(lines)
+    first_line = BOT_INFO_TEXT.splitlines()[0].strip()
+    return first_line[:SHORT_DESCRIPTION_LIMIT]
 
 
 async def main() -> None:

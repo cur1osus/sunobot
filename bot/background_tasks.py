@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -167,8 +168,10 @@ async def _poll_single_task(
     status = str(data.get("status") or "").upper()
 
     if status == "SUCCESS":
-        await _send_tracks(bot, task.chat_id, task.filename_base, data)
+        file_ids = await _send_tracks(bot, task.chat_id, task.filename_base, data)
         task.status = MusicTaskStatus.SUCCESS.value
+        if file_ids and not task.audio_file_ids:
+            task.audio_file_ids = json.dumps(file_ids, ensure_ascii=False)
         await session.commit()
         return
 

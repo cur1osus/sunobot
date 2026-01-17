@@ -9,12 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.db.redis.user_model import UserRD
 from bot.keyboards.enums import MusicBackTarget
 from bot.keyboards.factories import MusicStyle
-from bot.keyboards.inline import ik_back_home
+from bot.keyboards.inline import ik_back_home, ik_music_topic_text_menu
 from bot.states import MusicGenerationState
 from bot.utils.messaging import edit_or_answer
 from bot.utils.music_helpers import start_generation
-from bot.utils.music_state import update_music_data
-from bot.utils.texts import MUSIC_STYLE_CUSTOM_TEXT
+from bot.utils.music_state import get_music_data, update_music_data
+from bot.utils.texts import (
+    MUSIC_INSTRUMENTAL_STYLE_CUSTOM_TEXT,
+    MUSIC_PROMPT_INSTRUMENTAL_TEXT,
+    MUSIC_STYLE_CUSTOM_TEXT,
+    music_topic_custom_style_text,
+    music_topic_text_menu_text,
+)
 
 router = Router()
 MAX_STYLE_LEN = 1000
@@ -98,4 +104,74 @@ async def start_generation_from_style(
         session=session,
         sessionmaker=sessionmaker,
         redis=redis,
+    )
+
+
+@router.callback_query(MusicStyle.filter(), MusicGenerationState.topic_style)
+async def topic_style_selected(
+    query: CallbackQuery,
+    callback_data: MusicStyle,
+    state: FSMContext,
+) -> None:
+    await query.answer()
+    data = await get_music_data(state)
+
+    style_key = callback_data.style
+    if style_key == "custom":
+        await edit_or_answer(
+            query,
+            text=(
+                MUSIC_INSTRUMENTAL_STYLE_CUSTOM_TEXT
+                if data.instrumental
+                else music_topic_custom_style_text(data.topic)
+            ),
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.TOPIC_STYLE),
+        )
+        return
+
+    if data.instrumental:
+        await update_music_data(state, style=style_key)
+        await state.set_state(MusicGenerationState.prompt)
+        await edit_or_answer(
+            query,
+            text=MUSIC_PROMPT_INSTRUMENTAL_TEXT,
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.TOPIC_STYLE),
+        )
+        return
+
+    await update_music_data(state, style=style_key)
+    await state.set_state(MusicGenerationState.topic_text_menu)
+    await edit_or_answer(
+        query,
+        text=music_topic_text_menu_text(data.topic, style_key),
+        reply_markup=await ik_music_topic_text_menu(),
+    )
+
+
+@router.message(MusicGenerationState.topic_style)
+async def topic_style_custom_received(
+    message: Message,
+    state: FSMContext,
+) -> None:
+    style = (message.text or "").strip()
+    if not style:
+        await message.answer("Стиль не должен быть пустым.")
+        return
+    if len(style) > MAX_STYLE_LEN:
+        await message.answer("Стиль слишком длинный. Укоротите до 1000 символов.")
+        return
+
+    data = await get_music_data(state)
+    await update_music_data(state, style=style)
+    if data.instrumental:
+        await state.set_state(MusicGenerationState.prompt)
+        await message.answer(
+            MUSIC_PROMPT_INSTRUMENTAL_TEXT,
+            reply_markup=await ik_back_home(back_to=MusicBackTarget.TOPIC_STYLE),
+        )
+        return
+    await state.set_state(MusicGenerationState.topic_text_menu)
+    await message.answer(
+        music_topic_text_menu_text(data.topic, style),
+        reply_markup=await ik_music_topic_text_menu(),
     )

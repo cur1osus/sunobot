@@ -14,7 +14,6 @@ from sqlalchemy import select
 from bot.db.func import refund_user_credits
 from bot.db.models import UserModel
 from bot.db.redis.user_model import UserRD
-from bot.keyboards.inline import ik_main
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -30,7 +29,7 @@ async def _send_tracks(
     chat_id: int,
     filename_base: str,
     data: dict[str, Any],
-) -> bool:
+) -> list[str]:
     response = data.get("response", {}) if isinstance(data, dict) else {}
     tracks = response.get("sunoData") or []
     if not tracks:
@@ -40,6 +39,7 @@ async def _send_tracks(
 
     total = len(tracks)
     sent_any = False
+    file_ids: list[str] = []
     for idx, track in enumerate(tracks, start=1):
         audio_url = track.get("audioUrl") or track.get("streamAudioUrl")
         if not audio_url:
@@ -57,11 +57,13 @@ async def _send_tracks(
 
         filename = _build_filename(filename_base, idx, total, audio_url)
         try:
-            await bot.send_audio(
+            message = await bot.send_audio(
                 chat_id=chat_id,
                 audio=BufferedInputFile(audio_bytes, filename=filename),
             )
             sent_any = True
+            if message.audio and message.audio.file_id:
+                file_ids.append(message.audio.file_id)
         except Exception as err:
             logger.warning("Не удалось отправить аудиофайл %s: %s", filename, err)
             await bot.send_message(
@@ -69,16 +71,10 @@ async def _send_tracks(
                 f"Не удалось отправить файл для трека {idx}.",
             )
 
-    if sent_any:
-        await bot.send_message(
-            chat_id,
-            "Готово! Открой меню, чтобы запустить новую задачу.",
-            reply_markup=await ik_main(),
-        )
-    else:
+    if not sent_any:
         logger.warning("Не удалось отправить аудиофайлы для %s", filename_base)
         await bot.send_message(chat_id, "Не удалось отправить ни одного файла.")
-    return sent_any
+    return file_ids
 
 
 async def _download_audio(url: str) -> bytes:

@@ -16,6 +16,8 @@ class MusicFlowData:
     custom_mode: bool = False
     style: str = ""
     title: str = ""
+    topic: str = ""
+    title_back_target: str = ""
     prompt_after_mode: bool = False
     prompt_after_title: bool = False
 
@@ -28,6 +30,8 @@ class MusicFlowData:
             custom_mode=bool(raw.get("custom_mode", False)),
             style=str(raw.get("style", "")),
             title=str(raw.get("title", "")),
+            topic=str(raw.get("topic", "")),
+            title_back_target=str(raw.get("title_back_target", "")),
             prompt_after_mode=bool(raw.get("prompt_after_mode", False)),
             prompt_after_title=bool(raw.get("prompt_after_title", False)),
         )
@@ -40,6 +44,8 @@ class MusicFlowData:
             "custom_mode": self.custom_mode,
             "style": self.style,
             "title": self.title,
+            "topic": self.topic,
+            "title_back_target": self.title_back_target,
             "prompt_after_mode": self.prompt_after_mode,
             "prompt_after_title": self.prompt_after_title,
         }
