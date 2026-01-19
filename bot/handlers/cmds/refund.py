@@ -102,4 +102,4 @@ async def refund_cmd(
         amount=transaction.credits,
     )
 
-    await message.answer(f"Возврат выполнен. Списано кредитов: {transaction.credits}.")
+    await message.answer(f"Возврат выполнен. Списано Hit$: {transaction.credits}.")

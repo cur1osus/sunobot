@@ -230,7 +230,7 @@ async def prompt_received(
             amount=1,
         ):
             await message.answer(
-                "Недостаточно кредитов для генерации текста.",
+                "Недостаточно Hit$ для генерации текста.",
                 reply_markup=await ik_back_home(back_to=back_target),
             )
             return

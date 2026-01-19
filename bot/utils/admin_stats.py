@@ -130,7 +130,7 @@ async def build_admin_info_text(session: AsyncSession, period: str) -> str:
         f"Продажи (карта): {_format_sales_by_currency(sales_current, sales_prev, CARD_CURRENCY)}\n"
         f"Продажи (звезды): {_format_sales_by_currency(sales_current, sales_prev, STARS_CURRENCY)}\n"
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
-        f"Кредиты Suno: {suno_credits}\n\n"
+        f"Hit$ Suno: {suno_credits}\n\n"
         f"Песни: {songs_current} ({_format_delta(songs_current, songs_prev)})\n"
         f"Сгенерированные тексты: {ai_texts_current} ({_format_delta(ai_texts_current, ai_texts_prev)})\n"
         f"Сгенерированные инструменталы: {instrumental_current} ({_format_delta(instrumental_current, instrumental_prev)})\n\n"
@@ -256,7 +256,7 @@ async def _fetch_suno_credits() -> str:
     try:
         credits = await build_suno_client().get_remaining_credits()
     except SunoAPIError as err:
-        logger.warning("Не удалось получить кредиты Suno: %s", err)
+        logger.warning("Не удалось получить Hit$ Suno: %s", err)
         return "недоступно"
     return f"{credits} (~{credits // 12} песен)"
 

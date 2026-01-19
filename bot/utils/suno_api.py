@@ -191,7 +191,7 @@ class SunoClient:
         )
         credits = data.get("data")
         if credits is None:
-            raise SunoAPIError("Не удалось получить баланс кредитов из Suno API.")
+            raise SunoAPIError("Не удалось получить баланс Hit$ из Suno API.")
         return int(credits)
 
     async def get_lyrics_details(self, task_id: str) -> dict[str, Any]:

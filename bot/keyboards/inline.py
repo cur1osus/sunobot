@@ -177,7 +177,7 @@ async def ik_topup_plans(method: str) -> InlineKeyboardMarkup:
     for tariff in tariffs:
         builder.button(
             text=(
-                f"{tariff.credits} кредитов ({tariff.songs} генерации песен) - "
+                f"{tariff.credits} Hit$ ({tariff.songs} генерации песен) - "
                 f"{tariff.price} {currency_label}"
             ),
             callback_data=TopupPlan(method=method, plan=tariff.plan).pack(),
@@ -198,7 +198,7 @@ async def ik_music_text_menu() -> InlineKeyboardMarkup:
             callback_data=MusicTopic(topic=option.key).pack(),
         )
     builder.button(
-        text="🤖 Создать текст через ИИ (1 кредит)",
+        text="🤖 Создать текст через ИИ (1 Hit$)",
         callback_data=MusicTextAction(action="ai").pack(),
     )
     builder.button(
@@ -206,7 +206,7 @@ async def ik_music_text_menu() -> InlineKeyboardMarkup:
         callback_data=MusicTextAction(action="manual").pack(),
     )
     builder.button(
-        text="🎹 Инструментал без слов (2 кредита)",
+        text="🎹 Инструментал без слов (2 Hit$)",
         callback_data=MusicTextAction(action="instrumental").pack(),
     )
     builder.button(
@@ -239,7 +239,7 @@ async def ik_music_topic_styles() -> InlineKeyboardMarkup:
 async def ik_music_topic_text_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="🤖 Создать текст через ИИ (1 кредит)",
+        text="🤖 Создать текст через ИИ (1 Hit$)",
         callback_data=MusicTextAction(action="ai").pack(),
     )
     builder.button(
@@ -257,11 +257,11 @@ async def ik_music_topic_text_menu() -> InlineKeyboardMarkup:
 async def ik_music_ai_result() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="🛠️ Исправить текст с ИИ (1 кредит)",
+        text="🛠️ Исправить текст с ИИ (1 Hit$)",
         callback_data=MusicTextAction(action="ai_edit").pack(),
     )
     builder.button(
-        text="🚀 Сгенерировать песню (2 кредита)",
+        text="🚀 Сгенерировать песню (2 Hit$)",
         callback_data=MusicTextAction(action="generate_song").pack(),
     )
     builder.button(
@@ -278,7 +278,7 @@ async def ik_music_manual_prompt(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="🤖 Создать текст через ИИ (1 кредит)",
+        text="🤖 Создать текст через ИИ (1 Hit$)",
         callback_data=MusicTextAction(action="ai").pack(),
     )
     builder.button(

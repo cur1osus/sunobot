@@ -125,7 +125,7 @@ async def successful_payment(
         await session.rollback()
         logger.warning("Не удалось сохранить транзакцию: %s", err)
         await message.answer(
-            "Оплата прошла, кредиты начислены, но транзакция не сохранена. "
+            "Оплата прошла, Hit$ начислены, но транзакция не сохранена. "
             "Напишите в поддержку."
         )
         return
@@ -139,7 +139,7 @@ async def successful_payment(
         payment=payment,
     )
 
-    await message.answer(f"Оплата прошла успешно! Начислено {tariff.credits} кредитов.")
+    await message.answer(f"Оплата прошла успешно! Начислено {tariff.credits} Hit$.")
 
 
 async def _apply_referral_bonus(
