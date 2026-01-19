@@ -36,6 +36,7 @@ dependencies = [
     "msgspec==0.20.0",
     "multidict==6.7.0",
     "openai==1.68.0",
+    "pre-commit>=4.5.1",
     "propcache==0.4.1",
     "pycparser==2.23",
     "pydantic==2.12.5",

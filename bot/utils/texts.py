@@ -24,7 +24,7 @@ BOT_INFO_TEXT = (
     "Чат: @HitSongMaker_chat\n"
     "Сотрудничество/вопросы: HitSongMaker_support"
 )
-print(len(BOT_INFO_TEXT))
+
 
 BOT_DESCRIPTION_TEXT = (
     "🎵 Добро пожаловать в HitSongMaker!\n\n"

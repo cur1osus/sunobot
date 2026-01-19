@@ -13,3 +13,9 @@ wheels/
 .env.prod
 .ruff_cache
 AGENTS.md
+CLAUDE.md
+deploy.sh
+run.sh
+.pytest_cache
+.ruff_cache
+.uv-cache
