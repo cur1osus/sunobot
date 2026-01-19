@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -14,6 +16,10 @@ from bot.states import MusicGenerationState
 from bot.utils.messaging import edit_or_answer
 from bot.utils.music_helpers import start_generation
 from bot.utils.music_state import get_music_data, update_music_data
+from bot.utils.speech_recognition import (
+    SpeechRecognitionError,
+    transcribe_message_audio,
+)
 from bot.utils.texts import (
     MUSIC_INSTRUMENTAL_STYLE_CUSTOM_TEXT,
     MUSIC_PROMPT_INSTRUMENTAL_TEXT,
@@ -23,6 +29,7 @@ from bot.utils.texts import (
 )
 
 router = Router()
+logger = logging.getLogger(__name__)
 MAX_STYLE_LEN = 1000
 
 
@@ -35,7 +42,16 @@ async def style_received(
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
-    style = (message.text or "").strip()
+    style = (message.text or message.caption or "").strip()
+    if not style and (message.voice or message.audio):
+        try:
+            style = await transcribe_message_audio(message, language="ru")
+        except SpeechRecognitionError as err:
+            logger.warning("Не удалось распознать аудио: %s", err)
+            await message.answer(
+                "Не удалось распознать аудио. Отправьте стиль текстом."
+            )
+            return
     if not style:
         await message.answer("Стиль не должен быть пустым.")
         return
@@ -153,7 +169,16 @@ async def topic_style_custom_received(
     message: Message,
     state: FSMContext,
 ) -> None:
-    style = (message.text or "").strip()
+    style = (message.text or message.caption or "").strip()
+    if not style and (message.voice or message.audio):
+        try:
+            style = await transcribe_message_audio(message, language="ru")
+        except SpeechRecognitionError as err:
+            logger.warning("Не удалось распознать аудио: %s", err)
+            await message.answer(
+                "Не удалось распознать аудио. Отправьте стиль текстом."
+            )
+            return
     if not style:
         await message.answer("Стиль не должен быть пустым.")
         return

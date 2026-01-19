@@ -26,6 +26,10 @@ from bot.utils.messaging import edit_or_answer
 from bot.utils.music_helpers import _lyrics_client, ask_for_title  # noqa: PLC2701
 from bot.utils.music_state import MusicFlowData, get_music_data, update_music_data
 from bot.utils.music_topics import get_music_topic_label
+from bot.utils.speech_recognition import (
+    SpeechRecognitionError,
+    transcribe_message_audio,
+)
 from bot.utils.texts import (
     LYRICS_MENU_TEXT,
     MUSIC_AI_EDIT_TEXT,
@@ -200,7 +204,14 @@ async def prompt_received(
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
-    prompt = (message.text or "").strip()
+    prompt = (message.text or message.caption or "").strip()
+    if not prompt and (message.voice or message.audio):
+        try:
+            prompt = await transcribe_message_audio(message, language="ru")
+        except SpeechRecognitionError as err:
+            logger.warning("Не удалось распознать аудио: %s", err)
+            await message.answer("Не удалось распознать аудио. Отправьте текстом.")
+            return
     if not prompt:
         await message.answer("Текст не должен быть пустым.")
         return

@@ -22,3 +22,7 @@ class WithdrawState(StatesGroup):
 
 class ManagerWithdrawState(StatesGroup):
     error_reason = State()
+
+
+class SpeechTestState(StatesGroup):
+    waiting = State()

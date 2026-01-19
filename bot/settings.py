@@ -58,6 +58,20 @@ class AgentPlatformSettings:
         self.timeout = int(os.environ.get("AGENT_PLATFORM_TIMEOUT", 60))
 
 
+class VseGptSettings:
+    def __init__(self) -> None:
+        self.api_key = os.environ.get("VSEGPT_API_KEY", "")
+        self.base_url = os.environ.get(
+            "VSEGPT_BASE_URL",
+            "https://api.vsegpt.ru/v1",
+        )
+        self.stt_model = os.environ.get(
+            "VSEGPT_STT_MODEL",
+            "stt-openai/whisper-1",
+        )
+        self.timeout = int(os.environ.get("VSEGPT_TIMEOUT", 60))
+
+
 class WithdrawSettings:
     def __init__(self) -> None:
         raw_ids = os.environ.get("WITHDRAW_MANAGER_IDS", "")
@@ -104,6 +118,7 @@ class Settings:
     redis: RedisSettings = RedisSettings()
     suno: SunoSettings = SunoSettings()
     agent_platform: AgentPlatformSettings = AgentPlatformSettings()
+    vsegpt: VseGptSettings = VseGptSettings()
     withdraw: WithdrawSettings = WithdrawSettings()
     payments: PaymentsSettings = PaymentsSettings()
     topup: TopupSettings = TopupSettings()
