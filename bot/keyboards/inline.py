@@ -56,6 +56,10 @@ async def ik_main(is_admin: bool = False) -> InlineKeyboardMarkup:
         text="🪙 Заработать",
         callback_data=MenuAction(action="earn").pack(),
     )
+    builder.button(
+        text="📞 Контакты",
+        callback_data=MenuAction(action="contacts").pack(),
+    )
     if is_admin:
         builder.button(
             text="АдминПанель",
