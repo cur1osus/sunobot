@@ -34,16 +34,19 @@ async def refund_cmd(
         await message.answer(
             "Использование:\n"
             "/refund [user_id] - возврат последней транзакции пользователя\n"
-            "/refund tx [transaction_id] - возврат по ID транзакции"
+            "/refund tx [charge_id] - возврат по ID платежа Telegram"
         )
         return
 
-    # Возврат по ID транзакции: /refund tx <transaction_id>
+    # Возврат по telegram_charge_id: /refund tx <telegram_charge_id>
     if parts[1].lower() == "tx":
-        if len(parts) < 3 or not parts[2].isdigit():
-            await message.answer("Использование: /refund tx [transaction_id]")
+        if len(parts) < 3:
+            await message.answer("Использование: /refund tx [charge_id]")
             return
-        transaction, target_user = await _get_transaction_by_id(session, int(parts[2]))
+        telegram_charge_id = parts[2]
+        transaction, target_user = await _get_transaction_by_charge_id(
+            session, telegram_charge_id
+        )
         if not transaction:
             await message.answer("Транзакция не найдена.")
             return
@@ -122,14 +125,14 @@ async def refund_cmd(
     )
 
 
-async def _get_transaction_by_id(
+async def _get_transaction_by_charge_id(
     session: AsyncSession,
-    transaction_id: int,
+    telegram_charge_id: str,
 ) -> tuple[TransactionModel | None, UserModel | None]:
-    """Получить транзакцию по ID и связанного пользователя."""
+    """Получить транзакцию по telegram_charge_id и связанного пользователя."""
     transaction = await session.scalar(
         select(TransactionModel).where(
-            TransactionModel.id == transaction_id,
+            TransactionModel.telegram_charge_id == telegram_charge_id,
             TransactionModel.method == "stars",
             TransactionModel.type == TransactionType.TOPUP.value,
             TransactionModel.status == TransactionStatus.SUCCESS.value,
