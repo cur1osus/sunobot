@@ -33,15 +33,15 @@ async def refund_cmd(
     if len(parts) < 2:
         await message.answer(
             "Использование:\n"
-            "/refund <user_id> - возврат последней транзакции пользователя\n"
-            "/refund tx <transaction_id> - возврат по ID транзакции"
+            "/refund [user_id] - возврат последней транзакции пользователя\n"
+            "/refund tx [transaction_id] - возврат по ID транзакции"
         )
         return
 
     # Возврат по ID транзакции: /refund tx <transaction_id>
     if parts[1].lower() == "tx":
         if len(parts) < 3 or not parts[2].isdigit():
-            await message.answer("Использование: /refund tx <transaction_id>")
+            await message.answer("Использование: /refund tx [transaction_id]")
             return
         transaction, target_user = await _get_transaction_by_id(session, int(parts[2]))
         if not transaction:
@@ -54,7 +54,7 @@ async def refund_cmd(
     else:
         # Возврат по user_id: /refund <user_id>
         if not parts[1].isdigit():
-            await message.answer("Использование: /refund <user_id>")
+            await message.answer("Использование: /refund [user_id]")
             return
         target_user_id = int(parts[1])
         target_user = await session.scalar(
