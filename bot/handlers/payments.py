@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, PreCheckoutQuery, SuccessfulPayment
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -12,8 +13,30 @@ from bot.db.enum import TransactionStatus, TransactionType
 from bot.db.func import add_referral_balance, add_user_credits
 from bot.db.models import TransactionModel, UserModel
 from bot.db.redis.user_model import UserRD
+from bot.keyboards.enums import MusicBackTarget
+from bot.keyboards.inline import (
+    ik_back_home,
+    ik_music_ai_result,
+    ik_music_manual_prompt,
+    ik_music_styles,
+    ik_music_topic_styles,
+    ik_music_topic_text_menu,
+)
+from bot.states import MusicGenerationState
+from bot.utils.music_state import get_music_data
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY, parse_payload
-from bot.utils.texts import get_topup_method, get_topup_tariff
+from bot.utils.texts import (
+    MUSIC_STYLE_TEXT,
+    MUSIC_TITLE_TEXT,
+    get_topup_method,
+    get_topup_tariff,
+    music_ai_prompt_text,
+    music_ai_result_text,
+    music_instrumental_style_text,
+    music_manual_prompt_text,
+    music_topic_style_text,
+    music_topic_text_menu_text,
+)
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -63,6 +86,7 @@ async def pre_checkout(pre_checkout: PreCheckoutQuery) -> None:
 @router.message(F.successful_payment)
 async def successful_payment(
     message: Message,
+    state: FSMContext,
     user: UserRD,
     session: AsyncSession,
     redis: Redis,
@@ -141,6 +165,8 @@ async def successful_payment(
 
     await message.answer(f"Оплата прошла успешно! Начислено {tariff.credits} Hit$.")
 
+    await _send_continue_hint(message, state)
+
 
 async def _apply_referral_bonus(
     *,
@@ -205,3 +231,93 @@ async def _apply_referral_bonus(
     except Exception as err:
         await session.rollback()
         logger.warning("Не удалось сохранить реферальную транзакцию: %s", err)
+
+
+async def _send_continue_hint(message: Message, state: FSMContext) -> None:
+    """Отправляет подсказку о продолжении создания песни после оплаты."""
+    current_state = await state.get_state()
+    if not current_state:
+        return
+
+    music_data = await get_music_data(state)
+    hint_prefix = (
+        "✨ Все введённые данные сохранены!\nМожете продолжить создание песни:\n\n"
+    )
+
+    def _get_text_menu_back_target() -> MusicBackTarget:
+        """Определяет целевую страницу для возврата в текстовом меню."""
+        return (
+            MusicBackTarget.TOPIC_TEXT_MENU
+            if music_data.topic and music_data.style
+            else MusicBackTarget.TEXT_MENU
+        )
+
+    match current_state:
+        case MusicGenerationState.prompt:
+            match music_data.prompt_source:
+                case "ai":
+                    text = hint_prefix + music_ai_prompt_text()
+                    reply_markup = await ik_back_home(
+                        back_to=_get_text_menu_back_target()
+                    )
+                case "manual":
+                    text = hint_prefix + music_manual_prompt_text()
+                    reply_markup = await ik_music_manual_prompt(
+                        back_to=_get_text_menu_back_target()
+                    )
+                case _ if music_data.instrumental:
+                    text = (
+                        hint_prefix
+                        + "🎹 Инструментал\n"
+                        + "Опишите желаемое настроение или характер музыки:"
+                    )
+                    reply_markup = await ik_back_home(
+                        back_to=MusicBackTarget.TOPIC_STYLE
+                    )
+                case _:
+                    return
+            await message.answer(text, reply_markup=reply_markup)
+
+        case MusicGenerationState.style:
+            await message.answer(
+                hint_prefix + MUSIC_STYLE_TEXT,
+                reply_markup=await ik_music_styles(),
+            )
+
+        case MusicGenerationState.title:
+            back_target = (
+                MusicBackTarget(music_data.title_back_target)
+                if music_data.title_back_target
+                else MusicBackTarget.PROMPT
+            )
+            await message.answer(
+                hint_prefix + MUSIC_TITLE_TEXT,
+                reply_markup=await ik_back_home(back_to=back_target),
+            )
+
+        case MusicGenerationState.topic_style:
+            text = (
+                hint_prefix + music_instrumental_style_text()
+                if music_data.instrumental
+                else hint_prefix + music_topic_style_text(music_data.topic)
+            )
+            await message.answer(
+                text,
+                reply_markup=await ik_music_topic_styles(),
+            )
+
+        case MusicGenerationState.topic_text_menu:
+            await message.answer(
+                hint_prefix
+                + music_topic_text_menu_text(music_data.topic, music_data.style),
+                reply_markup=await ik_music_topic_text_menu(),
+            )
+
+        case MusicGenerationState.ai_result if music_data.prompt:
+            await message.answer(
+                (
+                    hint_prefix
+                    + music_ai_result_text(music_data.style, music_data.prompt)
+                )[:4000],
+                reply_markup=await ik_music_ai_result(),
+            )

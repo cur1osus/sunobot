@@ -23,11 +23,6 @@ dev:
 	./run.sh .env.dev
 
 
-.PHONY: test
-test:
-	UV_CACHE_DIR=$(UV_CACHE_DIR) PYTHONPATH=. uv run --extra dev pytest -q
-
-
 .PHONY: e2e
 e2e:
 	UV_CACHE_DIR=$(UV_CACHE_DIR) PYTHONPATH=. uv run python scripts/e2e_smoke.py
