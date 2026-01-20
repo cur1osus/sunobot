@@ -46,6 +46,11 @@ class UserRD(msgspec.Struct, AlchemyStruct["UserRD"], kw_only=True, array_like=T
     async def save(self, redis: Redis, ttl: ExpiryT = timedelta(days=1)) -> str:
         return await redis.setex(self.key(self.user_id), ttl, ENCODER.encode(self))
 
+    async def update_last_active(self, redis: Redis) -> None:
+        """Update last_active timestamp and save to Redis."""
+        self.last_active = datetime.now()
+        await self.save(redis)
+
     @classmethod
     async def delete(cls, redis: Redis, user_id: int | str) -> int:
         return await redis.delete(cls.key(user_id))
@@ -54,3 +59,35 @@ class UserRD(msgspec.Struct, AlchemyStruct["UserRD"], kw_only=True, array_like=T
     async def delete_all(cls, redis: Redis) -> int:
         keys = await redis.keys(f"{cls.__name__}:*")
         return await redis.delete(*keys) if keys else 0
+
+    @classmethod
+    async def count_online(cls, redis: Redis, threshold_minutes: int = 5) -> int:
+        """
+        Count users who were active within the last threshold_minutes.
+
+        Args:
+            redis: Redis connection
+            threshold_minutes: Time window in minutes to consider user as online (default: 5)
+
+        Returns:
+            Number of online users
+        """
+        keys = await redis.keys(f"{cls.__name__}:*")
+        if not keys:
+            return 0
+
+        now = datetime.now()
+        threshold = timedelta(minutes=threshold_minutes)
+        online_count = 0
+
+        for key in keys:
+            data = await redis.get(key)
+            if data:
+                try:
+                    user = msgspec.msgpack.decode(data, type=cls)
+                    if now - user.last_active <= threshold:
+                        online_count += 1
+                except (msgspec.DecodeError, msgspec.ValidationError):
+                    continue
+
+        return online_count

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,9 +15,13 @@ from bot.db.enum import (
     UsageEventType,
 )
 from bot.db.models import MusicTaskModel, TransactionModel, UsageEventModel, UserModel
+from bot.db.redis.user_model import UserRD
 from bot.utils.formatting import format_rub
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
 from bot.utils.suno_api import SunoAPIError, build_suno_client
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 ONLINE_MINUTES: Final[int] = 15
 MUSIC_TASK_SUCCESS: Final[str] = MusicTaskStatus.SUCCESS.value
@@ -45,7 +49,9 @@ def get_period_bounds(period: str, now: datetime) -> PeriodBounds:
     return PeriodBounds(start=start, end=now, prev_start=prev_start, prev_end=start)
 
 
-async def build_admin_info_text(session: AsyncSession, period: str) -> str:
+async def build_admin_info_text(
+    session: AsyncSession, redis: Redis, period: str
+) -> str:
     db_now = await session.scalar(select(func.now()))
     now = (
         db_now
@@ -58,15 +64,7 @@ async def build_admin_info_text(session: AsyncSession, period: str) -> str:
     total_users = await session.scalar(select(func.count(UserModel.id))) or 0
     new_users = await _count_users(session, bounds.start, bounds.end)
 
-    online_since = bounds.end - timedelta(minutes=ONLINE_MINUTES)
-    online_users = (
-        await session.scalar(
-            select(func.count(UserModel.id)).where(
-                UserModel.last_active >= online_since
-            )
-        )
-        or 0
-    )
+    online_users = await UserRD.count_online(redis, threshold_minutes=ONLINE_MINUTES)
 
     sales_current = await _sum_sales(session, bounds.start, bounds.end)
     sales_prev = await _sum_sales(session, bounds.prev_start, bounds.prev_end)

@@ -33,8 +33,8 @@ async def _create_user(*, user: User, session: AsyncSession) -> UserModel:
     stmt = select(UserModel).where(eq(UserModel.user_id, user.id))
     user_model: UserModel | None = await session.scalar(stmt)
 
-    now = datetime.now(tz=UTC).replace(tzinfo=None)
     if not user_model:
+        now = datetime.now(tz=UTC).replace(tzinfo=None)
         user_model = UserModel(
             user_id=user.id,
             username=user.username,
@@ -47,7 +47,6 @@ async def _create_user(*, user: User, session: AsyncSession) -> UserModel:
     else:
         user_model.username = user.username
         user_model.name = user.first_name
-        user_model.last_active = now
 
     return cast(UserModel, user_model)
 
