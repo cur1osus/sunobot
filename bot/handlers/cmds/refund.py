@@ -30,31 +30,43 @@ async def refund_cmd(
         return
 
     parts = (message.text or "").strip().split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("Использование: /refund <user_id>")
-        return
-
-    target_user_id = int(parts[1])
-    target_user = await session.scalar(
-        select(UserModel).where(UserModel.user_id == target_user_id)
-    )
-    if not target_user:
-        await message.answer("Пользователь не найден.")
-        return
-
-    transaction = await session.scalar(
-        select(TransactionModel)
-        .where(
-            TransactionModel.user_idpk == target_user.id,
-            TransactionModel.method == "stars",
-            TransactionModel.type == TransactionType.TOPUP.value,
-            TransactionModel.status == TransactionStatus.SUCCESS.value,
+    if len(parts) < 2:
+        await message.answer(
+            "Использование:\n"
+            "/refund <user_id> - возврат последней транзакции пользователя\n"
+            "/refund tx <transaction_id> - возврат по ID транзакции"
         )
-        .order_by(TransactionModel.created_at.desc(), TransactionModel.id.desc())
-    )
-    if not transaction:
-        await message.answer("Не найдена успешная транзакция в звездах.")
         return
+
+    # Возврат по ID транзакции: /refund tx <transaction_id>
+    if parts[1].lower() == "tx":
+        if len(parts) < 3 or not parts[2].isdigit():
+            await message.answer("Использование: /refund tx <transaction_id>")
+            return
+        transaction, target_user = await _get_transaction_by_id(session, int(parts[2]))
+        if not transaction:
+            await message.answer("Транзакция не найдена.")
+            return
+        if not target_user:
+            await message.answer("Пользователь транзакции не найден.")
+            return
+        target_user_id = target_user.user_id
+    else:
+        # Возврат по user_id: /refund <user_id>
+        if not parts[1].isdigit():
+            await message.answer("Использование: /refund <user_id>")
+            return
+        target_user_id = int(parts[1])
+        target_user = await session.scalar(
+            select(UserModel).where(UserModel.user_id == target_user_id)
+        )
+        if not target_user:
+            await message.answer("Пользователь не найден.")
+            return
+        transaction = await _get_last_stars_transaction(session, target_user.id)
+        if not transaction:
+            await message.answer("Не найдена успешная транзакция в звездах.")
+            return
 
     if not transaction.telegram_charge_id:
         logger.warning(
@@ -102,4 +114,48 @@ async def refund_cmd(
         amount=transaction.credits,
     )
 
-    await message.answer(f"Возврат выполнен. Списано Hit$: {transaction.credits}.")
+    await message.answer(
+        f"Возврат выполнен.\n"
+        f"ID транзакции: {transaction.id}\n"
+        f"Пользователь: {target_user_id}\n"
+        f"Списано Hit$: {transaction.credits}"
+    )
+
+
+async def _get_transaction_by_id(
+    session: AsyncSession,
+    transaction_id: int,
+) -> tuple[TransactionModel | None, UserModel | None]:
+    """Получить транзакцию по ID и связанного пользователя."""
+    transaction = await session.scalar(
+        select(TransactionModel).where(
+            TransactionModel.id == transaction_id,
+            TransactionModel.method == "stars",
+            TransactionModel.type == TransactionType.TOPUP.value,
+            TransactionModel.status == TransactionStatus.SUCCESS.value,
+        )
+    )
+    if not transaction:
+        return None, None
+
+    target_user = await session.scalar(
+        select(UserModel).where(UserModel.id == transaction.user_idpk)
+    )
+    return transaction, target_user
+
+
+async def _get_last_stars_transaction(
+    session: AsyncSession,
+    user_idpk: int,
+) -> TransactionModel | None:
+    """Получить последнюю успешную транзакцию в звёздах для пользователя."""
+    return await session.scalar(
+        select(TransactionModel)
+        .where(
+            TransactionModel.user_idpk == user_idpk,
+            TransactionModel.method == "stars",
+            TransactionModel.type == TransactionType.TOPUP.value,
+            TransactionModel.status == TransactionStatus.SUCCESS.value,
+        )
+        .order_by(TransactionModel.created_at.desc(), TransactionModel.id.desc())
+    )
