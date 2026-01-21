@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot
@@ -172,6 +172,10 @@ async def _poll_single_task(
         task.status = MusicTaskStatus.SUCCESS.value
         if file_ids and not task.audio_file_ids:
             task.audio_file_ids = json.dumps(file_ids, ensure_ascii=False)
+        if not task.lyrics:
+            lyrics = _extract_lyrics(data)
+            if lyrics:
+                task.lyrics = lyrics
         await session.commit()
         return
 
@@ -236,3 +240,33 @@ async def _handle_error(
         amount=task.credits_cost,
     )
     await bot.send_message(task.chat_id, status_message)
+
+
+def _extract_lyrics(data: dict[str, Any]) -> str | None:
+    """Extract lyrics from Suno API response data."""
+    response = data.get("response") or {}
+    if not isinstance(response, dict):
+        return None
+    tracks = response.get("sunoData") or response.get("data") or []
+    if not isinstance(tracks, list):
+        return None
+
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        value = (
+            track.get("lyrics")
+            or track.get("lyric")
+            or track.get("text")
+            or track.get("content")
+        )
+        if value:
+            return str(value).strip()
+        meta = track.get("metadata")
+        if isinstance(meta, dict):
+            nested = meta.get("lyrics") or meta.get("lyric")
+            if nested:
+                return str(nested).strip()
+
+    value = data.get("lyrics") or data.get("lyric") or data.get("text")
+    return str(value).strip() if value else None

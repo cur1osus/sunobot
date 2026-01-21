@@ -206,22 +206,34 @@ async def track_lyrics(
         await query.answer("Трек ещё не готов.", show_alert=True)
         return
 
-    try:
-        payload = await _fetch_task_payload(task.task_id)
-    except SunoAPIError as err:
-        logger.warning("Не удалось получить текст трека %s: %s", task.task_id, err)
-        await query.answer("Не удалось получить текст песни.", show_alert=True)
-        return
-
-    tracks = _extract_tracks(payload)
     fallback_title = (
         task.filename_base.strip() if task.filename_base else f"Трек #{task.id}"
     )
-    title = _pick_title(tracks, fallback=fallback_title)
-    lyrics = _pick_lyrics(payload, tracks)
+
+    # Check if lyrics are already saved in DB
+    lyrics = task.lyrics
+    title = fallback_title
+
     if not lyrics:
-        await query.answer("Текст песни не найден.", show_alert=True)
-        return
+        # If not in DB, fetch from API
+        try:
+            payload = await _fetch_task_payload(task.task_id)
+        except SunoAPIError as err:
+            logger.warning("Не удалось получить текст трека %s: %s", task.task_id, err)
+            await query.answer("Не удалось получить текст песни.", show_alert=True)
+            return
+
+        tracks = _extract_tracks(payload)
+        title = _pick_title(tracks, fallback=fallback_title)
+        lyrics = _pick_lyrics(payload, tracks)
+
+        if not lyrics:
+            await query.answer("Текст песни не найден.", show_alert=True)
+            return
+
+        # Save lyrics to DB for future use
+        task.lyrics = lyrics
+        await session.commit()
 
     message = query.message
     if not message:

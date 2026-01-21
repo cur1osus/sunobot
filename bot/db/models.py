@@ -105,6 +105,7 @@ class MusicTaskModel(Base):
     poll_timeout: Mapped[int] = mapped_column(default=600)
     last_polled_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     audio_file_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lyrics: Mapped[str | None] = mapped_column(Text, nullable=True)
     topic_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
     style: Mapped[str | None] = mapped_column(String(100), nullable=True)
     prompt_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
