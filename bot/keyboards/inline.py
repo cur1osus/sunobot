@@ -122,11 +122,17 @@ async def ik_my_track_detail(
     track_id: int,
     *,
     show_lyrics: bool = True,
+    show_audio: bool = True,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if show_audio:
+        builder.button(
+            text="🎵 Отправить аудио",
+            callback_data=MyTrackAction(action="send_audio", track_id=track_id).pack(),
+        )
     if show_lyrics:
         builder.button(
-            text="Показать текст песни",
+            text="📝 Показать текст песни",
             callback_data=MyTrackAction(action="lyrics", track_id=track_id).pack(),
         )
     builder.button(

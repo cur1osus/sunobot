@@ -105,7 +105,9 @@ async def track_detail(
         await edit_or_answer(
             query,
             text=text,
-            reply_markup=await ik_my_track_detail(task.id, show_lyrics=False),
+            reply_markup=await ik_my_track_detail(
+                task.id, show_lyrics=False, show_audio=False
+            ),
         )
         return
 
@@ -120,13 +122,15 @@ async def track_detail(
             song_type=song_type,
             genre=genre,
         )
+        # Show audio button if file_ids exist, otherwise don't show it
+        show_audio = bool(file_ids)
         await edit_or_answer(
             query,
             text=text,
-            reply_markup=await ik_my_track_detail(task.id, show_lyrics=False),
+            reply_markup=await ik_my_track_detail(
+                task.id, show_lyrics=False, show_audio=show_audio
+            ),
         )
-        if file_ids:
-            await _send_track_audio(query, [], title=base_title, file_ids=file_ids)
         return
 
     tracks = _extract_tracks(payload)
@@ -143,8 +147,46 @@ async def track_detail(
     await edit_or_answer(
         query,
         text=text,
-        reply_markup=await ik_my_track_detail(task.id, show_lyrics=True),
+        reply_markup=await ik_my_track_detail(
+            task.id, show_lyrics=True, show_audio=True
+        ),
     )
+
+
+@router.callback_query(MyTrackAction.filter(F.action == "send_audio"))
+async def track_send_audio(
+    query: CallbackQuery,
+    callback_data: MyTrackAction,
+    user: UserRD,
+    session: AsyncSession,
+) -> None:
+    await query.answer()
+    task = await _get_user_task(session, user.id, callback_data.track_id)
+    if not task:
+        await query.answer("Трек не найден.", show_alert=True)
+        return
+    if task.status != MusicTaskStatus.SUCCESS.value:
+        await query.answer("Трек ещё не готов.", show_alert=True)
+        return
+
+    base_title = (
+        task.filename_base.strip() if task.filename_base else f"Трек #{task.id}"
+    )
+    file_ids = _load_audio_file_ids(task)
+
+    try:
+        payload = await _fetch_task_payload(task.task_id)
+    except SunoAPIError as err:
+        logger.warning("Не удалось получить данные трека %s: %s", task.task_id, err)
+        message = query.message
+        if message and file_ids:
+            await _send_track_audio(query, [], title=base_title, file_ids=file_ids)
+        else:
+            await query.answer("Не удалось получить аудиофайлы.", show_alert=True)
+        return
+
+    tracks = _extract_tracks(payload)
+    title = _pick_title(tracks, fallback=base_title)
     await _send_track_audio(query, tracks, title=title, file_ids=file_ids)
 
 
