@@ -18,6 +18,7 @@ from bot.db.models import MusicTaskModel, TransactionModel, UsageEventModel, Use
 from bot.db.redis.user_model import UserRD
 from bot.utils.formatting import format_rub
 from bot.utils.payments import CARD_CURRENCY, STARS_CURRENCY
+from bot.utils.speech_recognition import SpeechRecognitionError, get_vsegpt_balance
 from bot.utils.suno_api import SunoAPIError, build_suno_client
 
 if TYPE_CHECKING:
@@ -122,13 +123,15 @@ async def build_admin_info_text(
         bounds.prev_end,
     )
     suno_credits = await _fetch_suno_credits()
+    vsegpt_credits = await _fetch_vsegpt_credits()
 
     return (
         f"📊 Инфо — период: \n{period_label}\n\n"
         f"Продажи (карта): {_format_sales_by_currency(sales_current, sales_prev, CARD_CURRENCY)}\n"
         f"Продажи (звезды): {_format_sales_by_currency(sales_current, sales_prev, STARS_CURRENCY)}\n"
         f"Выводы реферерам: {format_rub(withdrawals_current)} р. ({_format_delta_rub(withdrawals_current - withdrawals_prev)})\n\n"
-        f"Hit$ Suno: {suno_credits}\n\n"
+        f"Кредиты SunoApi: {suno_credits}\n"
+        f"Кредиты VseGpt: {vsegpt_credits}\n\n"
         f"Песни: {songs_current} ({_format_delta(songs_current, songs_prev)})\n"
         f"Сгенерированные тексты: {ai_texts_current} ({_format_delta(ai_texts_current, ai_texts_prev)})\n"
         f"Сгенерированные инструменталы: {instrumental_current} ({_format_delta(instrumental_current, instrumental_prev)})\n\n"
@@ -257,6 +260,15 @@ async def _fetch_suno_credits() -> str:
         logger.warning("Не удалось получить Hit$ Suno: %s", err)
         return "недоступно"
     return f"{credits} (~{credits // 12} песен)"
+
+
+async def _fetch_vsegpt_credits() -> str:
+    try:
+        credits = await get_vsegpt_balance()
+    except SpeechRecognitionError as err:
+        logger.warning("Не удалось получить кредиты VseGpt: %s", err)
+        return "недоступно"
+    return f"{credits:.2f}"
 
 
 def _format_delta_int(value: int) -> str:
