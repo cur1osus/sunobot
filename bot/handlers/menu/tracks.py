@@ -160,7 +160,6 @@ async def track_send_audio(
     user: UserRD,
     session: AsyncSession,
 ) -> None:
-    await query.answer()
     task = await _get_user_task(session, user.id, callback_data.track_id)
     if not task:
         await query.answer("Трек не найден.", show_alert=True)
@@ -180,11 +179,13 @@ async def track_send_audio(
         logger.warning("Не удалось получить данные трека %s: %s", task.task_id, err)
         message = query.message
         if message and file_ids:
+            await query.answer()
             await _send_track_audio(query, [], title=base_title, file_ids=file_ids)
         else:
             await query.answer("Не удалось получить аудиофайлы.", show_alert=True)
         return
 
+    await query.answer()
     tracks = _extract_tracks(payload)
     title = _pick_title(tracks, fallback=base_title)
     await _send_track_audio(query, tracks, title=title, file_ids=file_ids)
@@ -197,7 +198,6 @@ async def track_lyrics(
     user: UserRD,
     session: AsyncSession,
 ) -> None:
-    await query.answer()
     task = await _get_user_task(session, user.id, callback_data.track_id)
     if not task:
         await query.answer("Трек не найден.", show_alert=True)
@@ -225,7 +225,10 @@ async def track_lyrics(
 
     message = query.message
     if not message:
+        await query.answer()
         return
+
+    await query.answer()
     for chunk in _split_text(my_tracks_lyrics_text(title=title, lyrics=lyrics)):
         await message.answer(chunk)
 
