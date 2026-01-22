@@ -16,6 +16,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.base import DefaultKeyBuilder
 from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import BotCommand
 from dotenv import load_dotenv
 from redis.asyncio import Redis
@@ -116,13 +117,33 @@ async def shutdown(dispatcher: Dispatcher) -> None:
     logger.info("Бот остановлен")
 
 
-async def set_default_commands(bot: Bot) -> None:
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="start"),
-        ]
-    )
-    await _set_bot_profile(bot)
+async def set_default_commands(bot: Bot, max_retries: int = 3) -> None:
+    """Установка команд и профиля бота с обработкой RetryAfter."""
+    for attempt in range(max_retries):
+        try:
+            await bot.set_my_commands(
+                [
+                    BotCommand(command="start", description="start"),
+                ]
+            )
+            await _set_bot_profile(bot)
+            logger.info("Команды и профиль бота успешно установлены")
+            return
+        except TelegramRetryAfter as e:
+            retry_after = e.retry_after
+            logger.warning(
+                f"RetryAfter при установке команд: ждём {retry_after} сек (попытка {attempt + 1}/{max_retries})"
+            )
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_after)
+            else:
+                logger.error("Не удалось установить команды после всех попыток")
+                raise
+        except Exception as e:
+            logger.error(f"Ошибка при установке команд: {e}", exc_info=True)
+            if attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(2)
 
 
 async def _set_bot_profile(bot: Bot) -> None:
@@ -178,7 +199,11 @@ async def main() -> None:
     dp.include_routers(handlers.router)
     dp.startup.register(partial(startup, se=se, redis=redis))
     dp.shutdown.register(shutdown)
-    await set_default_commands(bot)
+
+    if se.set_commands_on_startup:
+        await set_default_commands(bot)
+    else:
+        logger.info("Установка команд отключена (SET_COMMANDS_ON_STARTUP=false)")
 
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 

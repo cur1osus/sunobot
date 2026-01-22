@@ -113,6 +113,9 @@ class TopupSettings:
 class Settings:
     bot_token = os.environ.get("BOT_TOKEN", "")
     sep = os.environ.get("SEP", "\n")
+    set_commands_on_startup = os.environ.get(
+        "SET_COMMANDS_ON_STARTUP", "true"
+    ).lower() in ("true", "1", "yes")
 
     db: DBSettings = DBSettings()
     redis: RedisSettings = RedisSettings()
