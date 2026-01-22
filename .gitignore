@@ -19,3 +19,4 @@ run.sh
 .pytest_cache
 .ruff_cache
 .uv-cache
+.claude
