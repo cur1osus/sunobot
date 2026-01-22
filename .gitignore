@@ -20,3 +20,4 @@ run.sh
 .ruff_cache
 .uv-cache
 .claude
+commit_and_push.sh
