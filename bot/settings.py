@@ -65,6 +65,7 @@ class VseGptSettings:
             "VSEGPT_BASE_URL",
             "https://api.vsegpt.ru/v1",
         )
+        self.proxy = os.environ.get("VSEGPT_PROXY", "")
         self.stt_model = os.environ.get(
             "VSEGPT_STT_MODEL",
             "stt-openai/whisper-1",

@@ -152,10 +152,11 @@ async def get_vsegpt_balance() -> float:
         "Authorization": f"Bearer {se.vsegpt.api_key}",
         "Content-Type": "application/json",
     }
+    proxy = se.vsegpt.proxy or None
 
     timeout = aiohttp.ClientTimeout(total=10)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, headers=headers) as response:
+        async with session.get(url, headers=headers, proxy=proxy) as response:
             if response.status != 200:
                 text = await response.text()
                 raise SpeechRecognitionError(
