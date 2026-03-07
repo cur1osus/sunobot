@@ -152,22 +152,38 @@ async def get_vsegpt_balance() -> float:
         "Authorization": f"Bearer {se.vsegpt.api_key}",
         "Content-Type": "application/json",
     }
-    proxy = se.vsegpt.proxy or None
+
+    # Если прокси не отвечает — делаем фолбэк на прямое подключение,
+    # чтобы админ-панель не падала целиком.
+    proxies = []
+    if se.vsegpt.proxy:
+        proxies.append(se.vsegpt.proxy)
+    proxies.append(None)
 
     timeout = aiohttp.ClientTimeout(total=10)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, headers=headers, proxy=proxy) as response:
-            if response.status != 200:
-                text = await response.text()
-                raise SpeechRecognitionError(
-                    f"VseGpt API error {response.status}: {text}"
-                )
+        last_err: Exception | None = None
+        for proxy in proxies:
+            try:
+                async with session.get(url, headers=headers, proxy=proxy) as response:
+                    if response.status != 200:
+                        text = await response.text()
+                        raise SpeechRecognitionError(
+                            f"VseGpt API error {response.status}: {text}"
+                        )
 
-            data = await response.json()
-            if data.get("status") != "ok":
-                reason = data.get("reason", "Unknown error")
-                raise SpeechRecognitionError(f"VseGpt API error: {reason}")
+                    data = await response.json()
+                    if data.get("status") != "ok":
+                        reason = data.get("reason", "Unknown error")
+                        raise SpeechRecognitionError(f"VseGpt API error: {reason}")
 
-            credits_data = data.get("data", {})
-            credits = credits_data.get("credits", 0)
-            return float(credits)
+                    credits_data = data.get("data", {})
+                    credits = credits_data.get("credits", 0)
+                    return float(credits)
+            except SpeechRecognitionError:
+                raise
+            except Exception as err:
+                last_err = err
+                continue
+
+    raise SpeechRecognitionError(f"VseGpt balance request failed: {last_err}")
