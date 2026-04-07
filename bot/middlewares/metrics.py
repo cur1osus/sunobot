@@ -5,6 +5,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import TelegramObject
 
 from bot.utils.metrics import metrics
@@ -26,6 +27,13 @@ class MetricsMiddleware(BaseMiddleware):
             result = await handler(event, data)
             metrics.inc("updates_success")
             return result
+        except TelegramBadRequest as exc:
+            if "query is too old" in exc.message:
+                logger.debug("Callback query устарел, игнорируем: %s", exc.message)
+                return None
+            metrics.inc("updates_error")
+            logger.exception("Ошибка обработки апдейта")
+            raise
         except Exception:
             metrics.inc("updates_error")
             logger.exception("Ошибка обработки апдейта")

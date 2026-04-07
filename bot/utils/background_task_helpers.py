@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 from aiogram import Bot
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import BufferedInputFile
 from sqlalchemy import select
 
@@ -57,10 +58,22 @@ async def _send_tracks(
 
         filename = _build_filename(filename_base, idx, total, audio_url)
         try:
-            message = await bot.send_audio(
-                chat_id=chat_id,
-                audio=BufferedInputFile(audio_bytes, filename=filename),
-            )
+            for attempt in range(3):
+                try:
+                    message = await bot.send_audio(
+                        chat_id=chat_id,
+                        audio=BufferedInputFile(audio_bytes, filename=filename),
+                    )
+                    break
+                except TelegramRetryAfter as retry_err:
+                    if attempt == 2:
+                        raise
+                    logger.warning(
+                        "Rate limit при отправке трека %s, ждём %s сек",
+                        filename,
+                        retry_err.retry_after,
+                    )
+                    await asyncio.sleep(retry_err.retry_after)
             sent_any = True
             if message.audio and message.audio.file_id:
                 file_ids.append(message.audio.file_id)

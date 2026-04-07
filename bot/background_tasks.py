@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 from sqlalchemy import or_, select
+from sqlalchemy.orm import selectinload
 
 from bot.db.enum import MusicTaskStatus
 from bot.db.models import MusicTaskModel
@@ -103,6 +104,7 @@ async def _poll_music_tasks_inner(
         )
         .order_by(MusicTaskModel.created_at.asc())
         .limit(MAX_TASKS_PER_RUN)
+        .options(selectinload(MusicTaskModel.user))
     )
     tasks = (await session.scalars(stmt)).all()
     if not tasks:
