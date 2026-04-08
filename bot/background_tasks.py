@@ -134,6 +134,10 @@ async def _poll_single_task(
     client,
     now: datetime,
 ) -> None:
+    # Save user_id before any commit — after commit SQLAlchemy expires relationships,
+    # causing MissingGreenlet if accessed later via lazy load in async context.
+    user_id = task.user.user_id
+
     task.last_polled_at = now
     if task.status == MusicTaskStatus.PENDING.value:
         task.status = MusicTaskStatus.PROCESSING.value
@@ -146,6 +150,7 @@ async def _poll_single_task(
             sessionmaker=sessionmaker,
             redis=redis,
             task=task,
+            user_id=user_id,
         )
         return
 
@@ -162,6 +167,7 @@ async def _poll_single_task(
                 sessionmaker=sessionmaker,
                 redis=redis,
                 task=task,
+                user_id=user_id,
                 status_message="Не удалось получить результат генерации. Попробуйте позже.",
             )
         return
@@ -188,6 +194,7 @@ async def _poll_single_task(
             sessionmaker=sessionmaker,
             redis=redis,
             task=task,
+            user_id=user_id,
             status_message=STATUS_MESSAGES.get(
                 status, "Генерация завершилась с ошибкой."
             ),
@@ -212,13 +219,14 @@ async def _handle_timeout(
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
     task: MusicTaskModel,
+    user_id: int,
 ) -> None:
     task.status = MusicTaskStatus.TIMEOUT.value
     await session.commit()
     await _refund_credits(
         sessionmaker=sessionmaker,
         redis=redis,
-        user_id=task.user.user_id,
+        user_id=user_id,
         amount=task.credits_cost,
     )
     await bot.send_message(task.chat_id, "Генерация превысила лимит ожидания.")
@@ -231,6 +239,7 @@ async def _handle_error(
     sessionmaker: async_sessionmaker[AsyncSession],
     redis: Redis,
     task: MusicTaskModel,
+    user_id: int,
     status_message: str,
 ) -> None:
     task.status = MusicTaskStatus.ERROR.value
@@ -238,7 +247,7 @@ async def _handle_error(
     await _refund_credits(
         sessionmaker=sessionmaker,
         redis=redis,
-        user_id=task.user.user_id,
+        user_id=user_id,
         amount=task.credits_cost,
     )
     await bot.send_message(task.chat_id, status_message)
